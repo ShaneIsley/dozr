@@ -8,6 +8,7 @@
 -   **Randomized Jitter:** Add a random delay on top of the base duration for more natural or distributed waits.
 -   **Verbose Output:** Get real-time feedback on the wait progress, including estimated time remaining (ETA). Can be configured with an optional update period.
 -   **Time Alignment:** Align the wait to the next even interval (e.g., `xx:00`, `xx:15`, `xx:30`).
+-   **Probabilistic Delay:** Wait for a duration only with a specified probability (0.0-1.0).
 
 ## Installation
 
@@ -78,6 +79,26 @@ Wait until the next even hour with verbose output:
 
 ```bash
 dozr --align 1h --verbose
+```
+
+### Probabilistic Delay
+
+Wait for 5 seconds with a 50% chance:
+
+```bash
+dozr 5s --probability 0.5
+```
+
+Wait for 10 seconds with a 100% chance (equivalent to `dozr 10s`):
+
+```bash
+dozr 10s --probability 1.0
+```
+
+Wait for 10 seconds with a 0% chance (will not wait):
+
+```bash
+dozr 10s --probability 0.0
 ```
 
 ## Contributing

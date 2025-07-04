@@ -82,6 +82,34 @@ Combine with verbose output and a custom update period:
 dozr --align 30m --verbose 1s
 ```
 
+### Probabilistic Delay
+
+Execute a wait with a given probability. This is useful for simulating intermittent delays or for chaos engineering.
+
+Wait for 5 seconds with a 50% chance:
+
+```bash
+dozr 5s --probability 0.5
+```
+
+Wait for 10 seconds with a 100% chance (equivalent to `dozr 10s`):
+
+```bash
+dozr 10s --probability 1.0
+```
+
+Wait for 10 seconds with a 0% chance (will not wait):
+
+```bash
+dozr 10s --probability 0.0
+```
+
+Combine with verbose output:
+
+```bash
+dozr 3s --probability 0.75 --verbose
+```
+
 ### Using `dozr` in Pipelines
 
 Since `dozr` prints its verbose output to `stderr`, it can be easily integrated into shell pipelines without interfering with `stdout`.
