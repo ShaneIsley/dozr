@@ -14,76 +14,82 @@ DOZR_BIN="./target/release/dozr"
 echo "--- Starting dozr Examples ---"
 echo ""
 
-echo "## Basic Usage"
-echo "### Waiting for a fixed duration (5s for demonstration)"
-echo "dozr 5s"
-$DOZR_BIN 5s
-echo ""
+run_dozr_example() {
+    local cmd="$@"
+    echo "$(date +'%H:%M:%S') - START: $cmd"
+    $DOZR_BIN $cmd
+    echo "$(date +'%H:%M:%S') - END: $cmd"
+    echo ""
+}
 
-echo "### Waiting for 1 minute and 30 seconds"
-echo "dozr 1m30s"
-$DOZR_BIN 1m30s
-echo ""
+echo "## Basic Usage"
+echo "### Waiting for a fixed duration (1s for demonstration)"
+run_dozr_example "1s"
+
+echo "### Waiting for 1 minute and 30 seconds (demonstration with 2s)"
+run_dozr_example "2s"
 
 echo "## Waiting with Jitter"
-echo "### Wait for 10 seconds, plus a random duration between 0 and 5 seconds"
-echo "dozr 10s --jitter 5000ms"
-$DOZR_BIN 10s --jitter 5000ms
-echo ""
+echo "### Wait for 1 second, plus a random duration between 0 and 0.5 seconds"
+run_dozr_example "1s --jitter 500ms"
 
 echo "## Verbose Output"
 echo "### Wait for 3 seconds with verbose output"
-echo "dozr 3s --verbose"
-$DOZR_BIN 3s --verbose
-echo ""
+run_dozr_example "3s --verbose"
 
-echo "### Combine verbose output with jitter (2s base, 1s jitter)"
-echo "dozr 10s --jitter 10s -v"
-$DOZR_BIN 20s --jitter 10s -v
-echo ""
+echo "### Combine verbose output with jitter (20s base, 10s jitter)"
+run_dozr_example "20s --jitter 10s -v"
 
 echo "## Custom Verbose Update Period"
-echo "### Specify a custom update period for verbose messages (10s wait, 2500ms update)"
-echo "dozr 10s --verbose 2500ms"
-$DOZR_BIN 10s --verbose 2500ms
-echo ""
+echo "### Specify a custom update period for verbose messages (1s wait, 250ms update)"
+run_dozr_example "1s --verbose 250ms"
 
-echo "### Set verbose messages to update every 2 seconds (10s wait)"
-echo "dozr 10s --verbose 2s"
-$DOZR_BIN 10s --verbose 2s
-echo ""
+echo "### Set verbose messages to update every 1 second (2s wait)"
+run_dozr_example "2s --verbose 1s"
 
 echo "## Time Alignment"
 echo "### Wait until the next even 5-second mark"
-echo "dozr --align 5s"
-$DOZR_BIN --align 5s
-echo ""
+run_dozr_example "--align 5s"
 
 echo "### Wait until the next even 10-second mark, with verbose output"
-echo "dozr --align 10s --verbose"
-$DOZR_BIN --align 10s --verbose
-echo ""
+run_dozr_example "--align 10s --verbose"
 
 echo "### Combine with verbose output and a custom update period (15s align, 1s update)"
-echo "dozr --align 15s --verbose 1s"
-$DOZR_BIN --align 15s --verbose 1s
-echo ""
+run_dozr_example "--align 15s --verbose 1s"
+
+echo "## Probabilistic Delay"
+echo "### Wait for 1 second with a 50% chance"
+run_dozr_example "1s --probability 0.5"
+
+echo "### Wait for 1 second with a 100% chance"
+run_dozr_example "1s --probability 1.0"
+
+echo "### Wait for 1 second with a 0% chance"
+run_dozr_example "1s --probability 0.0"
+
+echo "### Combine with verbose output (3s wait, 75% chance)"
+run_dozr_example "3s --probability 0.75 --verbose"
 
 echo "## Using dozr in Pipelines"
 echo "### Run a command, wait, then run another command, showing dozr's progress"
-echo "echo "Starting process...""
-echo "dozr 10s -v"
-echo "echo "Process complete.""
+echo "$(date +'%H:%M:%S') - START: echo \"Starting process...\""
 echo "Starting process..."
-$DOZR_BIN 20s -v
+echo "$(date +'%H:%M:%S') - END: echo \"Starting process...\""
+
+echo "$(date +'%H:%M:%S') - START: dozr 2s -v"
+$DOZR_BIN 2s -v
+echo "$(date +'%H:%M:%S') - END: dozr 2s -v"
+
+echo "$(date +'%H:%M:%S') - START: echo \"Process complete.\""
 echo "Process complete."
+echo "$(date +'%H:%M:%S') - END: echo \"Process complete.\""
 echo ""
 
 echo "### Redirect dozr's verbose output to a log file"
 LOG_FILE="dozr_progress.log"
-echo "dozr 10s --jitter 500ms -v 2> $LOG_FILE"
-echo "cat $LOG_FILE"
-$DOZR_BIN 10s --jitter 500ms -v 2> "$LOG_FILE"
+echo "$(date +'%H:%M:%S') - START: dozr 1s --jitter 500ms -v 2> $LOG_FILE"
+$DOZR_BIN 1s --jitter 500ms -v 2> "$LOG_FILE"
+echo "$(date +'%H:%M:%S') - END: dozr 1s --jitter 500ms -v 2> $LOG_FILE"
 echo "Content of $LOG_FILE:"
 cat "$LOG_FILE"
 rm "$LOG_FILE"

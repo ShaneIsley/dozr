@@ -153,13 +153,11 @@ impl WaitCondition for ProbabilisticWait {
                 // Non-verbose path
                 thread::sleep(self.duration);
             }
-        } else {
-            if self.verbose.is_some() {
-                eprintln!(
-                    "Probabilistic wait: Skipping sleep (probability: {}, roll: {})",
-                    self.probability, roll
-                );
-            }
+        } else if self.verbose.is_some() {
+            eprintln!(
+                "Probabilistic wait: Skipping sleep (probability: {}, roll: {})",
+                self.probability, roll
+            );
         }
         Ok(())
     }

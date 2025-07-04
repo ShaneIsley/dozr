@@ -7,9 +7,9 @@ fn parse_positive_duration(s: &str) -> Result<Duration, String> {
 }
 
 fn parse_probability(s: &str) -> Result<f64, String> {
-    let prob: f64 = s.parse().map_err(|_| format!("Invalid float value: {}", s))?;
-    if prob < 0.0 || prob > 1.0 {
-        Err(format!("Probability must be between 0.0 and 1.0, inclusive: {}", s))
+    let prob: f64 = s.parse().map_err(|_| format!("Invalid float value: {s}"))?;
+    if !(0.0..=1.0).contains(&prob) {
+        Err(format!("Probability must be between 0.0 and 1.0, inclusive: {s}"))
     } else {
         Ok(prob)
     }
