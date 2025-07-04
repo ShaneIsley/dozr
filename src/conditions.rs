@@ -112,6 +112,59 @@ impl WaitCondition for TimeAlignWait {
     }
 }
 
+pub struct ProbabilisticWait {
+    pub duration: Duration,
+    pub probability: f64,
+    pub verbose: Option<Duration>,
+}
+
+impl WaitCondition for ProbabilisticWait {
+    fn wait(&self) -> Result<()> {
+        let mut rng = rand::rng();
+        let roll: f64 = rng.random_range(0.0..1.0);
+
+        if roll <= self.probability {
+            // Perform the actual sleep, potentially with verbose output
+            if let Some(display_interval) = self.verbose {
+                eprintln!(
+                    "Probabilistic wait: Sleeping for {} (probability: {})",
+                    format_duration(self.duration),
+                    self.probability
+                );
+
+                let start_time = Instant::now();
+                let mut next_display_time = start_time + display_interval;
+
+                while start_time.elapsed() < self.duration {
+                    let current_time = Instant::now();
+
+                    if current_time >= next_display_time {
+                        let remaining_time = self.duration
+                            .checked_sub(start_time.elapsed())
+                            .unwrap_or(Duration::ZERO);
+                        eprintln!("ETA: {}", format_duration(remaining_time));
+                        next_display_time = current_time + display_interval;
+                    }
+                    let time_until_next_display = next_display_time.saturating_duration_since(current_time);
+                    thread::sleep(std::cmp::min(display_interval, time_until_next_display));
+                }
+                eprintln!("Probabilistic wait complete.");
+            } else {
+                // Non-verbose path
+                thread::sleep(self.duration);
+            }
+        } else {
+            if self.verbose.is_some() {
+                eprintln!(
+                    "Probabilistic wait: Skipping sleep (probability: {}, roll: {})",
+                    self.probability, roll
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
 impl WaitCondition for DurationWait {
     fn wait(&self) -> Result<()> {
         let mut rng = rand::rng();
@@ -247,4 +300,34 @@ mod tests {
             align_interval - Duration::from_secs(remainder)
         }
     }
+
+    #[test]
+    fn test_probabilistic_wait_always_sleeps_at_1_0_probability() {
+        let wait_condition = ProbabilisticWait {
+            duration: Duration::from_millis(100),
+            probability: 1.0,
+            verbose: None,
+        };
+        let start_time = Instant::now();
+        wait_condition.wait().unwrap();
+        let elapsed = start_time.elapsed();
+        assert!(elapsed >= Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_probabilistic_wait_never_sleeps_at_0_0_probability() {
+        let wait_condition = ProbabilisticWait {
+            duration: Duration::from_millis(100),
+            probability: 0.0,
+            verbose: None,
+        };
+        let start_time = Instant::now();
+        wait_condition.wait().unwrap();
+        let elapsed = start_time.elapsed();
+        assert!(elapsed < Duration::from_millis(50)); // Should be very fast, not actually sleep
+    }
+
+    // Note: Testing intermediate probabilities (e.g., 0.5) is non-deterministic
+    // and typically requires running many iterations and checking statistical distribution,
+    // or mocking the RNG, which is beyond the scope of a simple unit test here.
 }
