@@ -16,4 +16,8 @@ pub struct Cli {
     /// Enable verbose output
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Set the update period for verbose messages (e.g., "1s", "500ms")
+    #[arg(long, value_parser = parse_duration)]
+    pub update_period: Option<Duration>,
 }

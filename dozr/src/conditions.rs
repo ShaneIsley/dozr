@@ -38,6 +38,7 @@ pub struct DurationWait {
     pub duration: Duration,
     pub jitter: Option<Duration>,
     pub verbose: bool,
+    pub update_period: Option<Duration>,
 }
 
 impl DurationWait {
@@ -76,12 +77,14 @@ impl WaitCondition for DurationWait {
         }
 
         let start_time = Instant::now();
-        // Display updates at least every 1 second, or more frequently for very short waits
-        let display_interval = if sleep_duration < Duration::from_secs(5) {
-            Duration::from_millis(500) // Update every 0.5s for short waits
-        } else {
-            Duration::from_secs(1) // Update every 1s for longer waits
-        };
+        // Determine display interval: user-defined, or adaptive fallback
+        let display_interval = self.update_period.unwrap_or_else(|| {
+            if sleep_duration < Duration::from_secs(5) {
+                Duration::from_millis(500) // Update every 0.5s for short waits
+            } else {
+                Duration::from_secs(1) // Update every 1s for longer waits
+            }
+        });
         let mut next_display_time = start_time + display_interval;
 
         while start_time.elapsed() < sleep_duration {
@@ -126,6 +129,7 @@ mod tests {
             duration,
             jitter: None,
             verbose: false,
+            update_period: None,
         };
         assert_eq!(wait_condition.duration, duration);
     }
@@ -139,6 +143,7 @@ mod tests {
             duration: Duration::from_secs(1),
             jitter: Some(Duration::from_millis(500)),
             verbose: false,
+            update_period: None,
         };
 
         let calculated_duration = wait_condition.calculate_sleep_duration(&mut mock_gen);
