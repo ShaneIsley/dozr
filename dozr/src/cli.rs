@@ -17,4 +17,8 @@ pub struct Cli {
     /// If no value is given, defaults to 1 second (or adaptive for short waits).
     #[arg(long, short, value_parser = parse_duration, num_args = 0..=1, default_missing_value = "1s")]
     pub verbose: Option<Duration>,
+
+    /// Align the wait to the next even interval (e.g., "5m", "1h").
+    #[arg(long, value_parser = parse_duration)]
+    pub align: Option<Duration>,
 }
