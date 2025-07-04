@@ -6,8 +6,9 @@ use std::time::Duration;
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// The duration to wait (e.g., "5s", "1m30s")
+    /// The duration to wait (e.g., "5s", "1m30s")
     #[arg(value_parser = parse_duration)]
-    pub duration: Duration,
+    pub duration: Option<Duration>,
 
     /// An optional jitter to add to the duration
     #[arg(long, value_parser = parse_duration)]
