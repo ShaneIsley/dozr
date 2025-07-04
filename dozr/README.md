@@ -6,8 +6,7 @@
 
 -   **Simple Duration Wait:** Pause for a specified duration (e.g., `5s`, `1m30s`).
 -   **Randomized Jitter:** Add a random delay on top of the base duration for more natural or distributed waits.
--   **Verbose Output:** Get real-time feedback on the wait progress, including estimated time remaining (ETA).
--   **Configurable Update Period:** Control how frequently verbose messages are displayed.
+-   **Verbose Output:** Get real-time feedback on the wait progress, including estimated time remaining (ETA). Can be configured with an optional update period.
 
 ## Installation
 
@@ -46,7 +45,7 @@ dozr 2s --jitter 1s
 
 ### Verbose Output
 
-Get detailed feedback during the wait:
+Get detailed feedback during the wait. By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
 
 ```bash
 dozr 10s --verbose
@@ -60,10 +59,10 @@ dozr 5s --jitter 2s --verbose
 
 ### Custom Verbose Update Period
 
-Set verbose messages to update every 500 milliseconds:
+Specify a custom update period for verbose messages (e.g., every 250 milliseconds):
 
 ```bash
-dozr 10s --verbose --update-period 500ms
+dozr 10s --verbose 250ms
 ```
 
 ## Contributing

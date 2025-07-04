@@ -37,8 +37,7 @@ pub trait WaitCondition {
 pub struct DurationWait {
     pub duration: Duration,
     pub jitter: Option<Duration>,
-    pub verbose: bool,
-    pub update_period: Option<Duration>,
+    pub verbose: Option<Duration>,
 }
 
 impl DurationWait {
@@ -68,38 +67,31 @@ impl WaitCondition for DurationWait {
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
         let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
 
-        if self.verbose {
+        if let Some(display_interval) = self.verbose {
             eprintln!("Waiting for {} (base: {}, jitter: {})", 
                 format_duration(sleep_duration),
                 format_duration(self.duration),
                 format_duration(self.jitter.unwrap_or(Duration::ZERO))
             );
-        }
 
-        let start_time = Instant::now();
-        // Determine display interval: user-defined, or adaptive fallback
-        let display_interval = self.update_period.unwrap_or_else(|| {
-            if sleep_duration < Duration::from_secs(5) {
-                Duration::from_millis(500) // Update every 0.5s for short waits
-            } else {
-                Duration::from_secs(1) // Update every 1s for longer waits
+            let start_time = Instant::now();
+            let mut next_display_time = start_time + display_interval;
+
+            while start_time.elapsed() < sleep_duration {
+                let current_time = Instant::now();
+
+                if current_time >= next_display_time {
+                    let remaining_time = sleep_duration.checked_sub(start_time.elapsed()).unwrap_or(Duration::ZERO);
+                    eprintln!("ETA: {}", format_duration(remaining_time));
+                    next_display_time = current_time + display_interval;
+                }
+                thread::sleep(Duration::from_millis(100)); // Check every 100ms
             }
-        });
-        let mut next_display_time = start_time + display_interval;
 
-        while start_time.elapsed() < sleep_duration {
-            let current_time = Instant::now();
-
-            if self.verbose && current_time >= next_display_time {
-                let remaining_time = sleep_duration.checked_sub(start_time.elapsed()).unwrap_or(Duration::ZERO);
-                eprintln!("ETA: {}", format_duration(remaining_time));
-                next_display_time = current_time + display_interval;
-            }
-            thread::sleep(Duration::from_millis(100)); // Check every 100ms
-        }
-
-        if self.verbose {
             eprintln!("Wait complete.");
+        } else {
+            // Non-verbose path
+            thread::sleep(sleep_duration);
         }
         Ok(())
     }
@@ -128,8 +120,7 @@ mod tests {
         let wait_condition = DurationWait {
             duration,
             jitter: None,
-            verbose: false,
-            update_period: None,
+            verbose: None,
         };
         assert_eq!(wait_condition.duration, duration);
     }
@@ -142,8 +133,7 @@ mod tests {
         let wait_condition = DurationWait {
             duration: Duration::from_secs(1),
             jitter: Some(Duration::from_millis(500)),
-            verbose: false,
-            update_period: None,
+            verbose: None,
         };
 
         let calculated_duration = wait_condition.calculate_sleep_duration(&mut mock_gen);

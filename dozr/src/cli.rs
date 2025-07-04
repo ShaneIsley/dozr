@@ -13,11 +13,8 @@ pub struct Cli {
     #[arg(long, value_parser = parse_duration)]
     pub jitter: Option<Duration>,
 
-    /// Enable verbose output
-    #[arg(short, long)]
-    pub verbose: bool,
-
-    /// Set the update period for verbose messages (e.g., "1s", "500ms")
-    #[arg(long, value_parser = parse_duration)]
-    pub update_period: Option<Duration>,
+    /// Enable verbose output. Optionally specify update period (e.g., "500ms").
+    /// If no value is given, defaults to 1 second (or adaptive for short waits).
+    #[arg(long, short, value_parser = parse_duration, num_args = 0..=1, default_missing_value = "1s")]
+    pub verbose: Option<Duration>,
 }

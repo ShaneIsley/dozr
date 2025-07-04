@@ -10,7 +10,6 @@ fn main() -> Result<()> {
         duration: cli.duration,
         jitter: cli.jitter,
         verbose: cli.verbose,
-        update_period: cli.update_period,
     };
 
     condition.wait()

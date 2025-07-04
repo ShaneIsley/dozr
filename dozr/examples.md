@@ -32,7 +32,7 @@ This can be useful for distributing load or simulating more natural delays in sc
 
 ### Verbose Output
 
-Use the `--verbose` or `-v` flag to see real-time status updates, including the estimated time remaining (ETA).
+Use the `--verbose` or `-v` flag to see real-time status updates, including the estimated time remaining (ETA). By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
 
 Wait for 30 seconds with verbose output:
 
@@ -48,18 +48,16 @@ dozr 1m --jitter 10s -v
 
 ### Custom Verbose Update Period
 
-By default, `dozr` adaptively updates verbose messages. For very short waits (under 5 seconds), it updates every 500ms. For longer waits, it updates every 1 second. You can override this behavior with `--update-period`.
-
-Set verbose messages to update every 250 milliseconds:
+Specify a custom update period for verbose messages (e.g., every 250 milliseconds):
 
 ```bash
-dozr 5s --verbose --update-period 250ms
+dozr 5s --verbose 250ms
 ```
 
 Set verbose messages to update every 5 seconds:
 
 ```bash
-dozr 1m --verbose --update-period 5s
+dozr 1m --verbose 5s
 ```
 
 ### Using `dozr` in Pipelines
