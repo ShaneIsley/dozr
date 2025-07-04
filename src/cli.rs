@@ -1,6 +1,7 @@
 use clap::Parser;
 use humantime::parse_duration;
 use std::time::Duration;
+use chrono::{Local, NaiveTime, Timelike, Duration as ChronoDuration};
 
 fn parse_positive_duration(s: &str) -> Result<Duration, String> {
     parse_duration(s).map_err(|e| e.to_string())
@@ -13,6 +14,29 @@ fn parse_probability(s: &str) -> Result<f64, String> {
     } else {
         Ok(prob)
     }
+}
+
+pub fn parse_time_until(s: &str) -> Result<Duration, String> {
+    let now = Local::now();
+    let parsed_time = NaiveTime::parse_from_str(s, "%H:%M")
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S"))
+        .map_err(|_| format!("Invalid time format. Expected HH:MM or HH:MM:SS: {}", s))?;
+
+    let mut target_datetime = now.with_hour(parsed_time.hour())
+                                 .and_then(|dt| dt.with_minute(parsed_time.minute()))
+                                 .and_then(|dt| dt.with_second(parsed_time.second()))
+                                 .and_then(|dt| dt.with_nanosecond(parsed_time.nanosecond()))
+                                 .unwrap(); // These unwraps are safe as we are setting valid time components
+
+    // If the target time has already passed today, set it for tomorrow
+    if target_datetime < now {
+        target_datetime = target_datetime + ChronoDuration::days(1);
+    }
+
+    let duration_until = target_datetime.signed_duration_since(now);
+
+    // Convert chrono::Duration to std::time::Duration
+    duration_until.to_std().map_err(|e| e.to_string())
 }
 
 #[derive(Parser)]
@@ -39,4 +63,8 @@ pub struct Cli {
     /// The probability (0.0-1.0) that the wait will occur. Only applicable with DURATION.
     #[arg(long, value_parser = parse_probability, requires = "duration")]
     pub probability: Option<f64>,
+
+    /// Wait until a specific time of day (HH:MM or HH:MM:SS). Rolls over to next day if time has passed.
+    #[arg(long, value_parser = parse_time_until, group = "wait_type")]
+    pub until: Option<Duration>,
 }
