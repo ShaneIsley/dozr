@@ -49,6 +49,18 @@ impl DurationWait {
     }
 }
 
+// Helper function to format Duration into a human-readable string
+fn format_duration(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    if secs < 60 {
+        format!("{}s", secs)
+    } else if secs < 3600 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {}m {}s", secs / 3600, (secs % 3600) / 60, secs % 60)
+    }
+}
+
 impl WaitCondition for DurationWait {
     fn wait(&self) -> Result<()> {
         let mut rng = rand::rng();
@@ -56,20 +68,31 @@ impl WaitCondition for DurationWait {
         let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
 
         if self.verbose {
-            eprintln!("Waiting for {:?} (base: {:?}, jitter: {:?})", sleep_duration, self.duration, self.jitter.unwrap_or(Duration::ZERO));
+            eprintln!("Waiting for {} (base: {}, jitter: {})", 
+                format_duration(sleep_duration),
+                format_duration(self.duration),
+                format_duration(self.jitter.unwrap_or(Duration::ZERO))
+            );
         }
 
         let start_time = Instant::now();
-        let mut elapsed_time = Duration::ZERO;
-        let check_interval = Duration::from_millis(100);
+        // Display updates at least every 1 second, or more frequently for very short waits
+        let display_interval = if sleep_duration < Duration::from_secs(5) {
+            Duration::from_millis(500) // Update every 0.5s for short waits
+        } else {
+            Duration::from_secs(1) // Update every 1s for longer waits
+        };
+        let mut next_display_time = start_time + display_interval;
 
-        while elapsed_time < sleep_duration {
-            let remaining_time = sleep_duration.checked_sub(elapsed_time).unwrap_or(Duration::ZERO);
-            if self.verbose {
-                eprintln!("ETA: {:?}", remaining_time);
+        while start_time.elapsed() < sleep_duration {
+            let current_time = Instant::now();
+
+            if self.verbose && current_time >= next_display_time {
+                let remaining_time = sleep_duration.checked_sub(start_time.elapsed()).unwrap_or(Duration::ZERO);
+                eprintln!("ETA: {}", format_duration(remaining_time));
+                next_display_time = current_time + display_interval;
             }
-            thread::sleep(check_interval.min(remaining_time));
-            elapsed_time = start_time.elapsed();
+            thread::sleep(Duration::from_millis(100)); // Check every 100ms
         }
 
         if self.verbose {

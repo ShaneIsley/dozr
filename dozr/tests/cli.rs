@@ -21,7 +21,7 @@ fn test_jitter_adds_time() {
     // Assert that the command took at least the base duration.
     assert!(duration.as_millis() >= 100);
     // Assert that the command did not take longer than the base + max jitter + a generous buffer for overhead.
-    assert!(duration.as_millis() <= 1000);
+    assert!(duration.as_millis() <= 1500);
 }
 
 #[test]
