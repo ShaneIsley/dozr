@@ -46,6 +46,22 @@ Combine verbose output with jitter:
 dozr 1m --jitter 10s -v
 ```
 
+### Custom Verbose Update Period
+
+By default, `dozr` adaptively updates verbose messages. For very short waits (under 5 seconds), it updates every 500ms. For longer waits, it updates every 1 second. You can override this behavior with `--update-period`.
+
+Set verbose messages to update every 250 milliseconds:
+
+```bash
+dozr 5s --verbose --update-period 250ms
+```
+
+Set verbose messages to update every 5 seconds:
+
+```bash
+dozr 1m --verbose --update-period 5s
+```
+
 ### Using `dozr` in Pipelines
 
 Since `dozr` prints its verbose output to `stderr`, it can be easily integrated into shell pipelines without interfering with `stdout`.
