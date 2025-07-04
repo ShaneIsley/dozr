@@ -1,0 +1,17 @@
+[package]
+name = "dozr"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "dozr"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.40", features = ["derive"] }
+humantime = "2.2.0"
+rand = "0.9.1"
+
+[dev-dependencies]
+assert_cmd = "2.0.17"
