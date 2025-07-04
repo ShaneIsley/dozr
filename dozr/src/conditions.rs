@@ -53,7 +53,7 @@ impl DurationWait {
 fn format_duration(duration: Duration) -> String {
     let secs = duration.as_secs();
     if secs < 60 {
-        format!("{}s", secs)
+        format!("{secs}s")
     } else if secs < 3600 {
         format!("{}m {}s", secs / 60, secs % 60)
     } else {
@@ -68,7 +68,8 @@ impl WaitCondition for DurationWait {
         let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
 
         if let Some(display_interval) = self.verbose {
-            eprintln!("Waiting for {} (base: {}, jitter: {})", 
+            eprintln!(
+                "Waiting for {} (base: {}, jitter: {})",
                 format_duration(sleep_duration),
                 format_duration(self.duration),
                 format_duration(self.jitter.unwrap_or(Duration::ZERO))
@@ -81,11 +82,13 @@ impl WaitCondition for DurationWait {
                 let current_time = Instant::now();
 
                 if current_time >= next_display_time {
-                    let remaining_time = sleep_duration.checked_sub(start_time.elapsed()).unwrap_or(Duration::ZERO);
+                    let remaining_time = sleep_duration
+                        .checked_sub(start_time.elapsed())
+                        .unwrap_or(Duration::ZERO);
                     eprintln!("ETA: {}", format_duration(remaining_time));
                     next_display_time = current_time + display_interval;
                 }
-                thread::sleep(Duration::from_millis(100)); // Check every 100ms
+                thread::sleep(Duration::from_millis(10)); // Check every 10ms
             }
 
             eprintln!("Wait complete.");
