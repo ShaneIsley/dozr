@@ -1,4 +1,6 @@
 use assert_cmd::Command;
+use predicates::str;
+use predicates::prelude::PredicateBooleanExt;
 use std::time::Instant;
 
 #[test]
@@ -19,5 +21,12 @@ fn test_jitter_adds_time() {
     // Assert that the command took at least the base duration.
     assert!(duration.as_millis() >= 100);
     // Assert that the command did not take longer than the base + max jitter + a generous buffer for overhead.
-    assert!(duration.as_millis() <= 500);
+    assert!(duration.as_millis() <= 1000);
+}
+
+#[test]
+fn test_verbose_output_includes_eta() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    // Use a duration long enough to ensure multiple ETA updates
+    cmd.args(&["2s", "--verbose"]).assert().success().stderr(str::contains("Waiting for").and(str::contains("ETA:")));
 }

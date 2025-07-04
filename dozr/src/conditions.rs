@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // 1. Define a dedicated trait for jitter generation.
 // This makes the dependency explicit and easy to mock.
@@ -59,7 +59,18 @@ impl WaitCondition for DurationWait {
             eprintln!("Waiting for {:?} (base: {:?}, jitter: {:?})", sleep_duration, self.duration, self.jitter.unwrap_or(Duration::ZERO));
         }
 
-        thread::sleep(sleep_duration);
+        let start_time = Instant::now();
+        let mut elapsed_time = Duration::ZERO;
+        let check_interval = Duration::from_millis(100);
+
+        while elapsed_time < sleep_duration {
+            let remaining_time = sleep_duration.checked_sub(elapsed_time).unwrap_or(Duration::ZERO);
+            if self.verbose {
+                eprintln!("ETA: {:?}", remaining_time);
+            }
+            thread::sleep(check_interval.min(remaining_time));
+            elapsed_time = start_time.elapsed();
+        }
 
         if self.verbose {
             eprintln!("Wait complete.");
