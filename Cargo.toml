@@ -2,9 +2,16 @@
 name = "dozr"
 version = "0.1.0"
 edition = "2024"
-description = "A flexible command-line utility for pausing execution with advanced timing features."
+description = "A flexible `sleep`-like command-line utility for pausing execution with fun timing features."
 license = "MIT"
 repository = "https://github.com/ShaneIsley/dozr"
+authors = ["Shane Isley <shane.isley@gmail.com>"]
+homepage = "https://github.com/ShaneIsley/dozr"
+documentation = "https://docs.rs/dozr"
+readme = "README.md"
+keywords = ["sleep", "cli", "wait", "timing", "utility", "automation", "delay"]
+categories = ["command-line-utilities", "development-tools", "os", "system-programming"]
+rust-version = "1.70.0" # Minimum Rust version required
 
 [lib]
 name = "dozr"
