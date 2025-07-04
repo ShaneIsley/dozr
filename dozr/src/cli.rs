@@ -12,4 +12,8 @@ pub struct Cli {
     /// An optional jitter to add to the duration
     #[arg(long, value_parser = parse_duration)]
     pub jitter: Option<Duration>,
+
+    /// Enable verbose output
+    #[arg(short, long)]
+    pub verbose: bool,
 }

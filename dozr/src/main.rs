@@ -9,6 +9,7 @@ fn main() -> Result<()> {
     let condition = DurationWait {
         duration: cli.duration,
         jitter: cli.jitter,
+        verbose: cli.verbose,
     };
 
     condition.wait()
