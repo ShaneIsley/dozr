@@ -60,6 +60,28 @@ Set verbose messages to update every 5 seconds:
 dozr 1m --verbose 5s
 ```
 
+### Time Alignment
+
+Align execution to the next even time interval. This is useful for synchronizing tasks to specific points in time (e.g., on the hour, every 15 minutes).
+
+Wait until the next even 5-minute mark:
+
+```bash
+dozr --align 5m
+```
+
+Wait until the next even hour, with verbose output:
+
+```bash
+dozr --align 1h --verbose
+```
+
+Combine with verbose output and a custom update period:
+
+```bash
+dozr --align 30m --verbose 1s
+```
+
 ### Using `dozr` in Pipelines
 
 Since `dozr` prints its verbose output to `stderr`, it can be easily integrated into shell pipelines without interfering with `stdout`.

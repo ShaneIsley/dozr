@@ -7,6 +7,7 @@
 -   **Simple Duration Wait:** Pause for a specified duration (e.g., `5s`, `1m30s`).
 -   **Randomized Jitter:** Add a random delay on top of the base duration for more natural or distributed waits.
 -   **Verbose Output:** Get real-time feedback on the wait progress, including estimated time remaining (ETA). Can be configured with an optional update period.
+-   **Time Alignment:** Align the wait to the next even interval (e.g., `xx:00`, `xx:15`, `xx:30`).
 
 ## Installation
 
@@ -63,6 +64,20 @@ Specify a custom update period for verbose messages (e.g., every 250 millisecond
 
 ```bash
 dozr 10s --verbose 250ms
+```
+
+### Time Alignment
+
+Wait until the next even 5-minute mark:
+
+```bash
+dozr --align 5m
+```
+
+Wait until the next even hour with verbose output:
+
+```bash
+dozr --align 1h --verbose
 ```
 
 ## Contributing
