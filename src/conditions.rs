@@ -100,7 +100,8 @@ impl WaitCondition for TimeAlignWait {
                     eprintln!("ETA: {}", format_duration(remaining_time));
                     next_display_time = current_time + display_interval;
                 }
-                thread::sleep(Duration::from_millis(10)); // Check every 10ms
+                let time_until_next_display = next_display_time.saturating_duration_since(current_time);
+                thread::sleep(std::cmp::min(display_interval, time_until_next_display));
             }
 
             eprintln!("Alignment complete.");
@@ -138,7 +139,8 @@ impl WaitCondition for DurationWait {
                     eprintln!("ETA: {}", format_duration(remaining_time));
                     next_display_time = current_time + display_interval;
                 }
-                thread::sleep(Duration::from_millis(10)); // Check every 10ms
+                let time_until_next_display = next_display_time.saturating_duration_since(current_time);
+                thread::sleep(std::cmp::min(display_interval, time_until_next_display));
             }
 
             eprintln!("Wait complete.");
