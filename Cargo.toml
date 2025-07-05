@@ -11,7 +11,7 @@ documentation = "https://docs.rs/dozr"
 readme = "README.md"
 keywords = ["sleep", "cli", "wait", "timing", "utility", "automation", "delay"]
 categories = ["command-line-utilities", "development-tools", "os", "system-programming"]
-rust-version = "1.70.0" # Minimum Rust version required
+rust-version = "1.85.0" # Minimum Rust version required
 
 [lib]
 name = "dozr"
