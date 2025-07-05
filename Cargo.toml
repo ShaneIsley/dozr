@@ -9,7 +9,7 @@ authors = ["Shane Isley <shane.isley@gmail.com>"]
 homepage = "https://github.com/ShaneIsley/dozr"
 documentation = "https://docs.rs/dozr"
 readme = "README.md"
-keywords = ["sleep", "cli", "wait", "timing", "utility", "automation", "delay"]
+keywords = ["sleep", "cli", "wait", "timing", "utility"]
 categories = ["command-line-utilities", "development-tools", "os", "system-programming"]
 rust-version = "1.85.0" # Minimum Rust version required
 
