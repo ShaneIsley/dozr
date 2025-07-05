@@ -16,18 +16,18 @@ echo ""
 
 run_dozr_example() {
     local cmd="$@"
-    echo "$(date +'%H:%M:%S') - START: $cmd"
+    echo "$(date +'%H:%M:%S') - START: dozr $cmd"
     $DOZR_BIN $cmd
-    echo "$(date +'%H:%M:%S') - END: $cmd"
+    echo "$(date +'%H:%M:%S') - END: dozr $cmd"
     echo ""
 }
 
 echo "## Basic Usage"
-echo "### Waiting for a fixed duration (1s for demonstration)"
+echo "### Waiting for a fixed duration"
 run_dozr_example "1s"
 
-echo "### Waiting for 1 minute and 30 seconds (demonstration with 2s)"
-run_dozr_example "2s"
+echo "### Waiting for 1 minute and 30 seconds"
+run_dozr_example "1m30s"
 
 echo "## Waiting with Jitter"
 echo "### Wait for 1 second, plus a random duration between 0 and 0.5 seconds"
@@ -37,14 +37,14 @@ echo "## Verbose Output"
 echo "### Wait for 3 seconds with verbose output"
 run_dozr_example "3s --verbose"
 
-echo "### Combine verbose output with jitter (20s base, 10s jitter)"
-run_dozr_example "20s --jitter 10s -v"
+echo "### Combine verbose output with jitter"
+run_dozr_example "2s --jitter 1s -v"
 
 echo "## Custom Verbose Update Period"
-echo "### Specify a custom update period for verbose messages (1s wait, 250ms update)"
+echo "### Specify a custom update period for verbose messages"
 run_dozr_example "1s --verbose 250ms"
 
-echo "### Set verbose messages to update every 1 second (2s wait)"
+echo "### Set verbose messages to update every 1 second"
 run_dozr_example "2s --verbose 1s"
 
 echo "## Time Alignment"
@@ -54,7 +54,7 @@ run_dozr_example "--align 5s"
 echo "### Wait until the next even 10-second mark, with verbose output"
 run_dozr_example "--align 10s --verbose"
 
-echo "### Combine with verbose output and a custom update period (15s align, 1s update)"
+echo "### Combine with verbose output and a custom update period"
 run_dozr_example "--align 15s --verbose 1s"
 
 echo "## Probabilistic Delay"
@@ -67,7 +67,7 @@ run_dozr_example "1s --probability 1.0"
 echo "### Wait for 1 second with a 0% chance"
 run_dozr_example "1s --probability 0.0"
 
-echo "### Combine with verbose output (3s wait, 75% chance)"
+echo "### Combine with verbose output"
 run_dozr_example "3s --probability 0.75 --verbose"
 
 echo "## Using dozr in Pipelines"

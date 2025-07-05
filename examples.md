@@ -6,26 +6,26 @@ This document provides various examples of how to use the `dozr` command-line ut
 
 ### Waiting for a fixed duration
 
-Wait for 10 seconds:
+Wait for 1 second:
 
 ```bash
-dozr 10s
+dozr 1s
 ```
 
-Wait for 1 minute and 30 seconds:
+Wait for 2 seconds:
 
 ```bash
-dozr 1m30s
+dozr 2s
 ```
 
 ### Waiting with Jitter
 
 Add a random delay to your wait. The jitter value specifies the *maximum* additional random duration.
 
-Wait for 5 seconds, plus a random duration between 0 and 2 seconds:
+Wait for 1 second, plus a random duration between 0 and 0.5 seconds:
 
 ```bash
-dozr 5s --jitter 2s
+dozr 1s --jitter 500ms
 ```
 
 This can be useful for distributing load or simulating more natural delays in scripts.
@@ -34,16 +34,16 @@ This can be useful for distributing load or simulating more natural delays in sc
 
 Use the `--verbose` or `-v` flag to see real-time status updates, including the estimated time remaining (ETA). By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
 
-Wait for 30 seconds with verbose output:
+Wait for 3 seconds with verbose output:
 
 ```bash
-dozr 30s --verbose
+dozr 3s --verbose
 ```
 
 Combine verbose output with jitter:
 
 ```bash
-dozr 1m --jitter 10s -v
+dozr 2s --jitter 1s -v
 ```
 
 ### Custom Verbose Update Period
@@ -51,57 +51,57 @@ dozr 1m --jitter 10s -v
 Specify a custom update period for verbose messages (e.g., every 250 milliseconds):
 
 ```bash
-dozr 5s --verbose 250ms
+dozr 1s --verbose 250ms
 ```
 
-Set verbose messages to update every 5 seconds:
+Set verbose messages to update every 1 second:
 
 ```bash
-dozr 1m --verbose 5s
+dozr 2s --verbose 1s
 ```
 
 ### Time Alignment
 
 Align execution to the next even time interval. This is useful for synchronizing tasks to specific points in time (e.g., on the hour, every 15 minutes).
 
-Wait until the next even 5-minute mark:
+Wait until the next even 5-second mark:
 
 ```bash
-dozr --align 5m
+dozr --align 5s
 ```
 
-Wait until the next even hour, with verbose output:
+Wait until the next even 10-second mark, with verbose output:
 
 ```bash
-dozr --align 1h --verbose
+dozr --align 10s --verbose
 ```
 
 Combine with verbose output and a custom update period:
 
 ```bash
-dozr --align 30m --verbose 1s
+dozr --align 15s --verbose 1s
 ```
 
 ### Probabilistic Delay
 
 Execute a wait with a given probability. This is useful for simulating intermittent delays or for chaos engineering.
 
-Wait for 5 seconds with a 50% chance:
+Wait for 1 second with a 50% chance:
 
 ```bash
-dozr 5s --probability 0.5
+dozr 1s --probability 0.5
 ```
 
-Wait for 10 seconds with a 100% chance (equivalent to `dozr 10s`):
+Wait for 1 second with a 100% chance (equivalent to `dozr 1s`):
 
 ```bash
-dozr 10s --probability 1.0
+dozr 1s --probability 1.0
 ```
 
-Wait for 10 seconds with a 0% chance (will not wait):
+Wait for 1 second with a 0% chance (will not wait):
 
 ```bash
-dozr 10s --probability 0.0
+dozr 1s --probability 0.0
 ```
 
 Combine with verbose output:
@@ -118,13 +118,13 @@ Run a command, wait, then run another command, showing `dozr`'s progress:
 
 ```bash
 echo "Starting process..."
-dozr 5s -v
+dozr 2s -v
 echo "Process complete."
 ```
 
 Redirect `dozr`'s verbose output to a log file:
 
 ```bash
-dozr 1m --jitter 5s -v 2> dozr_progress.log
+dozr 1s --jitter 500ms -v 2> dozr_progress.log
 cat dozr_progress.log
 ```
