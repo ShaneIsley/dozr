@@ -6,26 +6,26 @@ This document provides various examples of how to use the `dozr` command-line ut
 
 ### Waiting for a fixed duration
 
-Wait for 1 second:
+Wait for 10 seconds:
 
 ```bash
-dozr 1s
+dozr --duration 10s
 ```
 
-Wait for 2 seconds:
+Wait for 1 minute and 30 seconds:
 
 ```bash
-dozr 2s
+dozr --duration 1m30s
 ```
 
 ### Waiting with Jitter
 
 Add a random delay to your wait. The jitter value specifies the *maximum* additional random duration.
 
-Wait for 1 second, plus a random duration between 0 and 0.5 seconds:
+Wait for 5 seconds, plus a random duration between 0 and 2 seconds:
 
 ```bash
-dozr 1s --jitter 500ms
+dozr --duration 5s --jitter 2s
 ```
 
 This can be useful for distributing load or simulating more natural delays in scripts.
@@ -34,16 +34,16 @@ This can be useful for distributing load or simulating more natural delays in sc
 
 Use the `--verbose` or `-v` flag to see real-time status updates, including the estimated time remaining (ETA). By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
 
-Wait for 3 seconds with verbose output:
+Wait for 30 seconds with verbose output:
 
 ```bash
-dozr 3s --verbose
+dozr --duration 30s --verbose
 ```
 
 Combine verbose output with jitter:
 
 ```bash
-dozr 2s --jitter 1s -v
+dozr --duration 1m --jitter 10s -v
 ```
 
 ### Custom Verbose Update Period
@@ -51,13 +51,13 @@ dozr 2s --jitter 1s -v
 Specify a custom update period for verbose messages (e.g., every 250 milliseconds):
 
 ```bash
-dozr 1s --verbose 250ms
+dozr --duration 5s --verbose 250ms
 ```
 
-Set verbose messages to update every 1 second:
+Set verbose messages to update every 5 seconds:
 
 ```bash
-dozr 2s --verbose 1s
+dozr --duration 1m --verbose 5s
 ```
 
 ### Time Alignment
@@ -86,28 +86,28 @@ dozr --align 15s --verbose 1s
 
 Execute a wait with a given probability. This is useful for simulating intermittent delays or for chaos engineering.
 
-Wait for 1 second with a 50% chance:
+Wait for 5 seconds with a 50% chance:
 
 ```bash
-dozr 1s --probability 0.5
+dozr --duration 5s --probability 0.5
 ```
 
-Wait for 1 second with a 100% chance (equivalent to `dozr 1s`):
+Wait for 10 seconds with a 100% chance (equivalent to `dozr 10s`):
 
 ```bash
-dozr 1s --probability 1.0
+dozr --duration 10s --probability 1.0
 ```
 
-Wait for 1 second with a 0% chance (will not wait):
+Wait for 10 seconds with a 0% chance (will not wait):
 
 ```bash
-dozr 1s --probability 0.0
+dozr --duration 10s --probability 0.0
 ```
 
 Combine with verbose output:
 
 ```bash
-dozr 3s --probability 0.75 --verbose
+dozr --duration 3s --probability 0.75 --verbose
 ```
 
 ### Using `dozr` in Pipelines
@@ -118,13 +118,13 @@ Run a command, wait, then run another command, showing `dozr`'s progress:
 
 ```bash
 echo "Starting process..."
-dozr 2s -v
+dozr --duration 5s -v
 echo "Process complete."
 ```
 
 Redirect `dozr`'s verbose output to a log file:
 
 ```bash
-dozr 1s --jitter 500ms -v 2> dozr_progress.log
+dozr --duration 1m --jitter 5s -v 2> dozr_progress.log
 cat dozr_progress.log
 ```
