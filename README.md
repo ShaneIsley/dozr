@@ -6,7 +6,7 @@
 
 -   **Simple Duration Wait:** Pause for a specified duration (e.g., `5s`, `1m30s`).
 -   **Randomized Jitter:** Add a random delay on top of the base duration for more natural or distributed waits.
--   **Verbose Output:** Get real-time feedback on the wait progress, including estimated time remaining (ETA). Can be configured with an optional update period.
+-   **Verbose Output:** Get real-time feedback on the wait progress. By default (`--verbose`), updates are printed every 1 second. A custom update period can also be specified (e.g., `--verbose 250ms`).
 -   **Time Alignment:** Align the wait to the next even interval (e.g., `xx:00`, `xx:15`, `xx:30`).
 -   **Probabilistic Delay:** Wait for a duration only with a specified probability (0.0-1.0).
 
@@ -47,7 +47,7 @@ dozr 1s --jitter 500ms
 
 ### Verbose Output
 
-Get detailed feedback during the wait. By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
+Get detailed feedback during the wait. By default, updates are printed every 1 second.
 
 ```bash
 dozr 3s --verbose
