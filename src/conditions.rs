@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use crate::verbose_wait;
 
 // 1. Define a dedicated trait for jitter generation.
@@ -89,6 +89,29 @@ pub struct ProbabilisticWait {
     pub duration: Duration,
     pub probability: f64,
     pub verbose: Option<Duration>,
+}
+
+pub struct UntilTimeWait {
+    pub sleep_duration: Duration,
+    pub verbose: Option<Duration>,
+}
+
+impl WaitCondition for UntilTimeWait {
+    fn wait(&self) -> Result<()> {
+        if let Some(display_interval) = self.verbose {
+            let display_fn = |remaining: Duration| {
+                if remaining.is_zero() {
+                    eprintln!("Wait complete.");
+                } else {
+                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                }
+            };
+            verbose_wait(self.sleep_duration, display_interval, display_fn);
+        } else {
+            thread::sleep(self.sleep_duration);
+        }
+        Ok(())
+    }
 }
 
 impl WaitCondition for ProbabilisticWait {
@@ -266,7 +289,21 @@ mod tests {
         assert!(elapsed < Duration::from_millis(50)); // Should be very fast, not actually sleep
     }
 
-    // Note: Testing intermediate probabilities (e.g., 0.5) is non-deterministic
-    // and typically requires running many iterations and checking statistical distribution,
-    // or mocking the RNG, which is beyond the scope of a simple unit test here.
+    #[test]
+    fn test_jitter_generator_non_zero_max_jitter() {
+        let mut rng = rand::rng();
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let max_jitter = Duration::from_millis(100);
+        let generated_jitter = jitter_gen.generate(max_jitter);
+        assert!(generated_jitter <= max_jitter);
+    }
+
+    #[test]
+    fn test_jitter_generator_zero_max_jitter() {
+        let mut rng = rand::rng();
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let max_jitter = Duration::ZERO;
+        let generated_jitter = jitter_gen.generate(max_jitter);
+        assert_eq!(generated_jitter, Duration::ZERO);
+    }
 }

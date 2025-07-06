@@ -11,8 +11,8 @@ pub mod conditions;
 pub fn run() -> Result<()> {
     let args = cli::Cli::parse();
 
-    let condition: Box<dyn conditions::WaitCondition> = match (args.duration, args.align) {
-        (Some(duration), None) => {
+    let condition: Box<dyn conditions::WaitCondition> = match (args.duration, args.align, args.until) {
+        (Some(duration), None, None) => {
             if let Some(probability) = args.probability {
                 Box::new(conditions::ProbabilisticWait {
                     duration,
@@ -27,8 +27,12 @@ pub fn run() -> Result<()> {
                 })
             }
         }
-        (None, Some(align_to)) => Box::new(conditions::TimeAlignWait {
+        (None, Some(align_to), None) => Box::new(conditions::TimeAlignWait {
             align_interval: align_to,
+            verbose: args.verbose,
+        }),
+        (None, None, Some(until_duration)) => Box::new(conditions::UntilTimeWait {
+            sleep_duration: until_duration,
             verbose: args.verbose,
         }),
         // This case is now unreachable because of the clap group validation
@@ -81,9 +85,9 @@ pub fn get_alignment_duration(align_to: Duration) -> Result<Duration> {
 }
 
 /// Performs the wait with verbose progress updates.
-pub fn verbose_wait<F>(total_wait: Duration, update_period: Duration, display_fn: F)
+pub fn verbose_wait<F>(total_wait: Duration, update_period: Duration, mut display_fn: F)
 where
-    F: Fn(Duration),
+    F: FnMut(Duration),
 {
     let start = std::time::Instant::now();
     let mut remaining = total_wait;
@@ -106,4 +110,46 @@ where
         }
     }
     display_fn(Duration::ZERO);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_get_total_wait_duration_no_jitter() {
+        let base_duration = Duration::from_secs(1);
+        let total_wait = get_total_wait_duration(base_duration, None).unwrap();
+        assert_eq!(total_wait, base_duration);
+    }
+
+    #[test]
+    fn test_get_total_wait_duration_with_jitter() {
+        let base_duration = Duration::from_secs(1);
+        let jitter = Duration::from_millis(500);
+        let total_wait = get_total_wait_duration(base_duration, Some(jitter)).unwrap();
+        assert!(total_wait >= base_duration);
+        assert!(total_wait <= base_duration + jitter);
+    }
+
+    #[test]
+    fn test_get_alignment_duration() {
+        // This test is sensitive to the current time, so we can't assert a specific value.
+        // Instead, we'll just check that the function returns a duration.
+        let align_to = Duration::from_secs(10);
+        let wait_duration = get_alignment_duration(align_to).unwrap();
+        assert!(wait_duration <= align_to);
+    }
+
+    #[test]
+    fn test_verbose_wait() {
+        let total_wait = Duration::from_millis(100);
+        let update_period = Duration::from_millis(10);
+        let mut call_count = 0;
+        verbose_wait(total_wait, update_period, |_| {
+            call_count += 1;
+        });
+        assert!(call_count > 0);
+    }
 }
