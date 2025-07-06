@@ -34,18 +34,29 @@ echo "### Wait for 1 second, plus a random duration between 0 and 0.5 seconds"
 run_dozr_example "--duration 1s --jitter 500ms"
 
 echo "## Verbose Output"
-echo "### Wait for 3 seconds with verbose output"
+echo "### Wait for 3 seconds with adaptive verbose output"
 run_dozr_example "--duration 3s --verbose"
 
 echo "### Combine verbose output with jitter (20s base, 10s jitter)"
 run_dozr_example "--duration 20s --jitter 10s -v"
 
-echo "## Custom Verbose Update Period"
 echo "### Specify a custom update period for verbose messages (1s wait, 250ms update)"
 run_dozr_example "--duration 1s --verbose 250ms"
 
 echo "### Set verbose messages to update every 1 second (2s wait)"
 run_dozr_example "--duration 2s --verbose 1s"
+
+echo "### Wait for 25 seconds with adaptive verbose output (should show 5s updates)"
+run_dozr_example "--duration 25s --verbose"
+
+echo "### Wait for 75 seconds with adaptive verbose output (should show 10s updates)"
+run_dozr_example "--duration 75s --verbose"
+
+echo "### Wait for 350 seconds (5m 50s) with adaptive verbose output (should show 15s updates)"
+run_dozr_example "--duration 350s --verbose"
+
+echo "### Wait for 700 seconds (11m 40s) with adaptive verbose output (should show 1m updates)"
+run_dozr_example "--duration 700s --verbose"
 
 echo "## Time Alignment"
 echo "### Wait until the next even 5-second mark"
@@ -56,6 +67,19 @@ run_dozr_example "--align 10s --verbose"
 
 echo "### Combine with verbose output and a custom update period"
 run_dozr_example "--align 15s --verbose 1s"
+
+echo "## Wait Until a Specific Time"
+echo "### Wait until 10 seconds from now (HH:MM:SS format)"
+CURRENT_TIME=$(date +"%H:%M:%S")
+TARGET_TIME=$(date -v+10S +"%H:%M:%S")
+echo "Current time: $CURRENT_TIME, Target time: $TARGET_TIME"
+run_dozr_example "--until $TARGET_TIME"
+
+echo "### Wait until 5 seconds from now with verbose output (HH:MM format)"
+CURRENT_TIME=$(date +"%H:%M")
+TARGET_TIME=$(date -v+5S +"%H:%M")
+echo "Current time: $CURRENT_TIME, Target time: $TARGET_TIME"
+run_dozr_example "--until $TARGET_TIME --verbose"
 
 echo "## Probabilistic Delay"
 echo "### Wait for 1 second with a 50% chance"

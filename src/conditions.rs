@@ -1,4 +1,4 @@
-use crate::verbose_wait;
+use crate::{adaptive_verbose_wait, verbose_wait};
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
@@ -91,6 +91,29 @@ pub struct ProbabilisticWait {
     pub verbose: Option<Duration>,
 }
 
+pub struct UntilTimeWait {
+    pub sleep_duration: Duration,
+    pub verbose: Option<Duration>,
+}
+
+impl WaitCondition for UntilTimeWait {
+    fn wait(&self) -> Result<()> {
+        if let Some(display_interval) = self.verbose {
+            let display_fn = |remaining: Duration| {
+                if remaining.is_zero() {
+                    eprintln!("Wait complete.");
+                } else {
+                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                }
+            };
+            verbose_wait(self.sleep_duration, display_interval, display_fn);
+        } else {
+            thread::sleep(self.sleep_duration);
+        }
+        Ok(())
+    }
+}
+
 impl WaitCondition for ProbabilisticWait {
     fn wait(&self) -> Result<()> {
         let mut rng = rand::rng();
@@ -127,18 +150,31 @@ impl WaitCondition for DurationWait {
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
         let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
 
-        if let Some(display_interval) = self.verbose {
-            let display_fn = |remaining: Duration| {
-                if remaining.is_zero() {
-                    eprintln!("Wait complete.");
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                if self.verbose.is_some() {
+                    let display_fn = |remaining: Duration| {
+                        if remaining.is_zero() {
+                            eprintln!("Wait complete.");
+                        } else {
+                            eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                        }
+                    };
+                    adaptive_verbose_wait(sleep_duration, display_fn);
                 } else {
-                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                    thread::sleep(sleep_duration);
                 }
-            };
-            verbose_wait(sleep_duration, display_interval, display_fn);
-        } else {
-            // Non-verbose path
-            thread::sleep(sleep_duration);
+            }
         }
         Ok(())
     }
@@ -264,5 +300,22 @@ mod tests {
         wait_condition.wait().unwrap();
         let elapsed = start_time.elapsed();
         assert!(elapsed < Duration::from_millis(50)); // Should be very fast, not actually sleep
+    }
+    #[test]
+    fn test_jitter_generator_non_zero_max_jitter() {
+        let mut rng = rand::rng();
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let max_jitter = Duration::from_millis(100);
+        let generated_jitter = jitter_gen.generate(max_jitter);
+        assert!(generated_jitter <= max_jitter);
+    }
+
+    #[test]
+    fn test_jitter_generator_zero_max_jitter() {
+        let mut rng = rand::rng();
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let max_jitter = Duration::ZERO;
+        let generated_jitter = jitter_gen.generate(max_jitter);
+        assert_eq!(generated_jitter, Duration::ZERO);
     }
 }

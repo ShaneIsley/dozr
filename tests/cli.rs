@@ -125,8 +125,7 @@ fn test_duration_and_align_are_mutually_exclusive() {
 fn test_duration_or_align_is_required() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     cmd.assert().failure().stderr(str::contains(
-        "error: the following required arguments were not provided:
-  <--duration <DURATION>|--align <ALIGN>>",
+        "error: the following required arguments were not provided:\n  <--duration <DURATION>|--align <ALIGN>|--until <UNTIL>>",
     ));
 }
 
@@ -134,4 +133,111 @@ fn test_duration_or_align_is_required() {
 fn test_duration_is_valid() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     cmd.args(&["--duration", "1s"]).assert().success();
+}
+
+#[test]
+fn test_time_align_verbose_output() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--align", "5s", "--verbose"])
+        .assert()
+        .success()
+        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
+}
+
+#[test]
+fn test_probabilistic_wait_verbose_output() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--duration", "1s", "--probability", "1.0", "--verbose"])
+        .assert()
+        .success()
+        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
+}
+
+#[test]
+fn test_probabilistic_wait_skip_verbose_output() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--duration", "1s", "--probability", "0.0", "--verbose"])
+        .assert()
+        .success()
+        .stderr(str::contains("Probabilistic wait: Skipping sleep"));
+}
+
+#[test]
+fn test_jitter_zero_duration() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--duration", "1s", "--jitter", "0s"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_until_time_verbose_output() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    // Set a time in the near future (e.g., 5 seconds from now)
+    let now = chrono::Local::now();
+    let target_time = now + chrono::Duration::seconds(5);
+    let target_time_str = target_time.format("%H:%M:%S").to_string();
+
+    cmd.args(&["--until", &target_time_str, "--verbose"])
+        .assert()
+        .success()
+        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
+}
+
+#[test]
+fn test_invalid_until_time_format() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--until", "invalid-time"])
+        .assert()
+        .failure()
+        .stderr(str::contains("Invalid time format"));
+}
+
+#[test]
+fn test_invalid_until_time_hour() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--until", "25:00"])
+        .assert()
+        .failure()
+        .stderr(str::contains("Invalid time format"));
+}
+
+#[test]
+fn test_invalid_until_time_minute() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--until", "10:65"])
+        .assert()
+        .failure()
+        .stderr(str::contains("Invalid time format"));
+}
+
+#[test]
+fn test_until_time_in_future() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let now = chrono::Local::now();
+    let target_time = now + chrono::Duration::seconds(2);
+    let target_time_str = target_time.format("%H:%M:%S").to_string();
+
+    let start_time = Instant::now();
+    cmd.args(&["--until", &target_time_str])
+        .assert()
+        .success();
+    let elapsed = start_time.elapsed();
+
+    assert!(elapsed >= chrono::Duration::seconds(1).to_std().unwrap());
+    assert!(elapsed <= chrono::Duration::seconds(3).to_std().unwrap());
+}
+
+
+
+#[test]
+fn test_parse_time_until_hh_mm() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let now = chrono::Local::now();
+    let target_time = now + chrono::Duration::minutes(1);
+    let target_time_str = target_time.format("%H:%M").to_string();
+
+    cmd.args(&["--until", &target_time_str])
+        .assert()
+        .success();
 }
