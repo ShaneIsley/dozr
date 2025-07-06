@@ -107,7 +107,7 @@ where
         let eta = remaining.as_secs_f64();
 
         if eta > 0.0 {
-            display_fn(Duration::from_secs_f64(eta));
+            display_fn(Duration::from_secs(eta.round() as u64));
         }
     }
     display_fn(Duration::ZERO);
@@ -136,7 +136,7 @@ where
         let eta = remaining.as_secs_f64();
 
         if eta > 0.0 {
-            display_fn(Duration::from_secs_f64(eta));
+            display_fn(Duration::from_secs(eta.round() as u64));
         }
     }
     display_fn(Duration::ZERO);
@@ -145,20 +145,18 @@ where
 fn get_adaptive_update_period(remaining: Duration) -> Duration {
     let remaining_secs = remaining.as_secs();
 
-    if remaining_secs > 3600 {
-        // > 1 hour
-        Duration::from_secs(600) // 10 minutes
-    } else if remaining_secs > 600 {
-        // > 10 minutes
-        Duration::from_secs(60) // 1 minute
-    } else if remaining_secs > 60 {
-        // > 1 minute
-        Duration::from_secs(10) // 10 seconds
-    } else if remaining_secs > 10 {
-        // > 10 seconds
-        Duration::from_secs(1) // 1 second
+    if remaining_secs <= 20 {
+        Duration::from_secs(1) // 0-20s: 1s
+    } else if remaining_secs <= 60 {
+        Duration::from_secs(5) // 21-60s: 5s
+    } else if remaining_secs <= 300 {
+        // 5 minutes
+        Duration::from_secs(10) // 1-5m: 10s
+    } else if remaining_secs <= 600 {
+        // 10 minutes
+        Duration::from_secs(15) // 6-10m: 15s
     } else {
-        Duration::from_millis(250) // 250ms
+        Duration::from_secs(60) // 10m+: 1m
     }
 }
 

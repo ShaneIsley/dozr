@@ -46,6 +46,18 @@ run_dozr_example "--duration 1s --verbose 250ms"
 echo "### Set verbose messages to update every 1 second (2s wait)"
 run_dozr_example "--duration 2s --verbose 1s"
 
+echo "### Wait for 25 seconds with adaptive verbose output (should show 5s updates)"
+run_dozr_example "--duration 25s --verbose"
+
+echo "### Wait for 75 seconds with adaptive verbose output (should show 10s updates)"
+run_dozr_example "--duration 75s --verbose"
+
+echo "### Wait for 350 seconds (5m 50s) with adaptive verbose output (should show 15s updates)"
+run_dozr_example "--duration 350s --verbose"
+
+echo "### Wait for 700 seconds (11m 40s) with adaptive verbose output (should show 1m updates)"
+run_dozr_example "--duration 700s --verbose"
+
 echo "## Time Alignment"
 echo "### Wait until the next even 5-second mark"
 run_dozr_example "--align 5s"
