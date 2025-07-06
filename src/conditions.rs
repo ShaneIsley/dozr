@@ -1,8 +1,8 @@
-use crate::verbose_wait;
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
 use std::time::{Duration, SystemTime};
+use crate::verbose_wait;
 
 // 1. Define a dedicated trait for jitter generation.
 // This makes the dependency explicit and easy to mock.
@@ -147,7 +147,7 @@ impl WaitCondition for DurationWait {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     // 4. Create a mock generator for testing.
     struct MockJitterGenerator {
