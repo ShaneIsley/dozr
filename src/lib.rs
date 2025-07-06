@@ -11,33 +11,34 @@ pub mod conditions;
 pub fn run() -> Result<()> {
     let args = cli::Cli::parse();
 
-    let condition: Box<dyn conditions::WaitCondition> = match (args.duration, args.align, args.until) {
-        (Some(duration), None, None) => {
-            if let Some(probability) = args.probability {
-                Box::new(conditions::ProbabilisticWait {
-                    duration,
-                    probability,
-                    verbose: args.verbose_period(),
-                })
-            } else {
-                Box::new(conditions::DurationWait {
-                    duration,
-                    jitter: args.jitter,
-                    verbose: args.verbose_period(),
-                })
+    let condition: Box<dyn conditions::WaitCondition> =
+        match (args.duration, args.align, args.until) {
+            (Some(duration), None, None) => {
+                if let Some(probability) = args.probability {
+                    Box::new(conditions::ProbabilisticWait {
+                        duration,
+                        probability,
+                        verbose: args.verbose_period(),
+                    })
+                } else {
+                    Box::new(conditions::DurationWait {
+                        duration,
+                        jitter: args.jitter,
+                        verbose: args.verbose_period(),
+                    })
+                }
             }
-        }
-        (None, Some(align_to), None) => Box::new(conditions::TimeAlignWait {
-            align_interval: align_to,
-            verbose: args.verbose_period(),
-        }),
-        (None, None, Some(until_duration)) => Box::new(conditions::UntilTimeWait {
-            sleep_duration: until_duration,
-            verbose: args.verbose_period(),
-        }),
-        // This case is now unreachable because of the clap group validation
-        _ => unreachable!(),
-    };
+            (None, Some(align_to), None) => Box::new(conditions::TimeAlignWait {
+                align_interval: align_to,
+                verbose: args.verbose_period(),
+            }),
+            (None, None, Some(until_duration)) => Box::new(conditions::UntilTimeWait {
+                sleep_duration: until_duration,
+                verbose: args.verbose_period(),
+            }),
+            // This case is now unreachable because of the clap group validation
+            _ => unreachable!(),
+        };
 
     condition.wait()
 }

@@ -1,22 +1,23 @@
+use chrono::{Duration as ChronoDuration, Local, NaiveTime, Timelike};
 use clap::{ArgGroup, Parser};
 use std::time::Duration;
-use chrono::{Local, NaiveTime, Timelike, Duration as ChronoDuration};
 
 fn parse_time_until(s: &str) -> Result<Duration, String> {
     let now = Local::now();
     let parsed_time = NaiveTime::parse_from_str(s, "%H:%M")
         .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S"))
-        .map_err(|_| format!("Invalid time format. Expected HH:MM or HH:MM:SS: {}", s))?;
+        .map_err(|_| format!("Invalid time format. Expected HH:MM or HH:MM:SS: {s}"))?;
 
-    let mut target_datetime = now.with_hour(parsed_time.hour())
-                                 .and_then(|dt| dt.with_minute(parsed_time.minute()))
-                                 .and_then(|dt| dt.with_second(parsed_time.second()))
-                                 .and_then(|dt| dt.with_nanosecond(parsed_time.nanosecond()))
-                                 .unwrap(); // These unwraps are safe as we are setting valid time components
+    let mut target_datetime = now
+        .with_hour(parsed_time.hour())
+        .and_then(|dt| dt.with_minute(parsed_time.minute()))
+        .and_then(|dt| dt.with_second(parsed_time.second()))
+        .and_then(|dt| dt.with_nanosecond(parsed_time.nanosecond()))
+        .unwrap(); // These unwraps are safe as we are setting valid time components
 
     // If the target time has already passed today, set it for tomorrow
     if target_datetime < now {
-        target_datetime = target_datetime + ChronoDuration::days(1);
+        target_datetime += ChronoDuration::days(1);
     }
 
     let duration_until = target_datetime.signed_duration_since(now);
