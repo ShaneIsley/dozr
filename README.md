@@ -47,24 +47,22 @@ dozr 2s --jitter 1s
 
 ### Verbose Output
 
-Get detailed feedback during the wait. By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
+Get detailed feedback during the wait. When `--verbose` is used without a specified period, `dozr` intelligently adapts the update frequency based on the remaining time (e.g., less frequent for long waits, more frequent as the end approaches).
 
 ```bash
 dozr 10s --verbose
+```
+
+To specify a fixed update period (e.g., every 250 milliseconds):
+
+```bash
+dozr 10s --verbose 250ms
 ```
 
 Combine with jitter:
 
 ```bash
 dozr 5s --jitter 2s --verbose
-```
-
-### Custom Verbose Update Period
-
-Specify a custom update period for verbose messages (e.g., every 250 milliseconds):
-
-```bash
-dozr 10s --verbose 250ms
 ```
 
 ### Time Alignment
@@ -79,6 +77,20 @@ Wait until the next even hour with verbose output:
 
 ```bash
 dozr --align 1h --verbose
+```
+
+### Wait Until a Specific Time
+
+Wait until 5:30 PM today (rolls over to tomorrow if time has passed):
+
+```bash
+dozr --until 17:30
+```
+
+Wait until 9:00 AM tomorrow with verbose output:
+
+```bash
+dozr --until 09:00 --verbose
 ```
 
 ### Probabilistic Delay
