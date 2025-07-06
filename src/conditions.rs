@@ -1,8 +1,8 @@
+use crate::verbose_wait;
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
 use std::time::{Duration, SystemTime};
-use crate::verbose_wait;
 
 // 1. Define a dedicated trait for jitter generation.
 // This makes the dependency explicit and easy to mock.
@@ -91,44 +91,6 @@ pub struct ProbabilisticWait {
     pub verbose: Option<Duration>,
 }
 
-pub struct UntilTimeWait {
-    pub sleep_duration: Duration,
-    pub verbose: Option<Duration>,
-}
-
-impl WaitCondition for UntilTimeWait {
-    fn wait(&self) -> Result<()> {
-        if let Some(display_interval) = self.verbose {
-            eprintln!(
-                "Waiting until time. Sleeping for {}",
-                format_duration(self.sleep_duration)
-            );
-
-            let start_time = Instant::now();
-            let mut next_display_time = start_time + display_interval;
-
-            while start_time.elapsed() < self.sleep_duration {
-                let current_time = Instant::now();
-
-                if current_time >= next_display_time {
-                    let remaining_time = self.sleep_duration
-                        .checked_sub(start_time.elapsed())
-                        .unwrap_or(Duration::ZERO);
-                    eprintln!("ETA: {}", format_duration(remaining_time));
-                    next_display_time = current_time + display_interval;
-                }
-                let time_until_next_display = next_display_time.saturating_duration_since(current_time);
-                thread::sleep(std::cmp::min(display_interval, time_until_next_display));
-            }
-
-            eprintln!("Wait until time complete.");
-        } else {
-            thread::sleep(self.sleep_duration);
-        }
-        Ok(())
-    }
-}
-
 impl WaitCondition for ProbabilisticWait {
     fn wait(&self) -> Result<()> {
         let mut rng = rand::rng();
@@ -186,7 +148,6 @@ impl WaitCondition for DurationWait {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
-    use chrono::Timelike;
 
     // 4. Create a mock generator for testing.
     struct MockJitterGenerator {
@@ -304,32 +265,4 @@ mod tests {
         let elapsed = start_time.elapsed();
         assert!(elapsed < Duration::from_millis(50)); // Should be very fast, not actually sleep
     }
-
-    #[test]
-    fn test_until_time_wait_calculation() {
-        // Mock current time to a known point for deterministic testing
-        // This is tricky without a time-mocking library. For now, we'll rely on
-        // the `parse_time_until` function's internal logic being correct.
-        // We can't easily test the `wait` method deterministically here without
-        // mocking `SystemTime::now()`.
-
-        // Test case 1: Target time is in the future today
-        let now = chrono::Local::now();
-        let target_time_str = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), (now.second() + 5) % 60);
-        let parsed_duration = crate::cli::parse_time_until(&target_time_str).unwrap();
-        assert!(parsed_duration >= Duration::from_secs(4)); // Should be around 5 seconds
-        assert!(parsed_duration <= Duration::from_secs(6));
-
-        // Test case 2: Target time is in the past today, so it rolls over to tomorrow
-        let now = chrono::Local::now();
-        let target_time_str = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), (now.second() + 55) % 60);
-        let parsed_duration = crate::cli::parse_time_until(&target_time_str).unwrap();
-        // Should be approximately 24 hours minus the difference to the next minute
-        assert!(parsed_duration >= Duration::from_secs(23 * 3600 + 59 * 60));
-        assert!(parsed_duration <= Duration::from_secs(24 * 3600 + 1));
-    }
-
-    // Note: Testing intermediate probabilities (e.g., 0.5) is non-deterministic
-    // and typically requires running many iterations and checking statistical distribution,
-    // or mocking the RNG, which is beyond the scope of a simple unit test here.
 }
