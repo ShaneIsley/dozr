@@ -17,23 +17,23 @@ pub fn run() -> Result<()> {
                 Box::new(conditions::ProbabilisticWait {
                     duration,
                     probability,
-                    verbose: args.verbose,
+                    verbose: args.verbose_period(),
                 })
             } else {
                 Box::new(conditions::DurationWait {
                     duration,
                     jitter: args.jitter,
-                    verbose: args.verbose,
+                    verbose: args.verbose_period(),
                 })
             }
         }
         (None, Some(align_to), None) => Box::new(conditions::TimeAlignWait {
             align_interval: align_to,
-            verbose: args.verbose,
+            verbose: args.verbose_period(),
         }),
         (None, None, Some(until_duration)) => Box::new(conditions::UntilTimeWait {
             sleep_duration: until_duration,
-            verbose: args.verbose,
+            verbose: args.verbose_period(),
         }),
         // This case is now unreachable because of the clap group validation
         _ => unreachable!(),
@@ -112,6 +112,55 @@ where
     display_fn(Duration::ZERO);
 }
 
+/// Performs the wait with adaptive verbose progress updates.
+pub fn adaptive_verbose_wait<F>(total_wait: Duration, mut display_fn: F)
+where
+    F: FnMut(Duration),
+{
+    let start = std::time::Instant::now();
+    let mut remaining = total_wait;
+
+    while remaining > Duration::ZERO {
+        let elapsed = start.elapsed();
+        let update_period = get_adaptive_update_period(remaining);
+        let current_wait = if remaining < update_period {
+            remaining
+        } else {
+            update_period
+        };
+
+        thread::sleep(current_wait);
+
+        remaining = total_wait.saturating_sub(elapsed);
+        let eta = remaining.as_secs_f64();
+
+        if eta > 0.0 {
+            display_fn(Duration::from_secs_f64(eta));
+        }
+    }
+    display_fn(Duration::ZERO);
+}
+
+fn get_adaptive_update_period(remaining: Duration) -> Duration {
+    let remaining_secs = remaining.as_secs();
+
+    if remaining_secs > 3600 {
+        // > 1 hour
+        Duration::from_secs(600) // 10 minutes
+    } else if remaining_secs > 600 {
+        // > 10 minutes
+        Duration::from_secs(60) // 1 minute
+    } else if remaining_secs > 60 {
+        // > 1 minute
+        Duration::from_secs(10) // 10 seconds
+    } else if remaining_secs > 10 {
+        // > 10 seconds
+        Duration::from_secs(1) // 1 second
+    } else {
+        Duration::from_millis(250) // 250ms
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,6 +197,16 @@ mod tests {
         let update_period = Duration::from_millis(10);
         let mut call_count = 0;
         verbose_wait(total_wait, update_period, |_| {
+            call_count += 1;
+        });
+        assert!(call_count > 0);
+    }
+
+    #[test]
+    fn test_adaptive_verbose_wait() {
+        let total_wait = Duration::from_secs(5);
+        let mut call_count = 0;
+        adaptive_verbose_wait(total_wait, |_| {
             call_count += 1;
         });
         assert!(call_count > 0);

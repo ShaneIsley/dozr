@@ -43,7 +43,7 @@ pub struct Cli {
 
     /// Enable verbose output, with an optional update period (e.g., "250ms").
     #[arg(short, long, value_name = "UPDATE_PERIOD", value_parser = humantime::parse_duration, num_args = 0..=1, default_missing_value = "1s")]
-    pub verbose: Option<Duration>,
+    pub verbose: Option<Option<Duration>>,
 
     /// Wait only with a certain probability (0.0 to 1.0).
     #[arg(short, long)]
@@ -52,6 +52,12 @@ pub struct Cli {
     /// Wait until a specific time of day (HH:MM or HH:MM:SS). Rolls over to next day if time has passed.
     #[arg(long, value_parser = parse_time_until, group = "wait_type")]
     pub until: Option<Duration>,
+}
+
+impl Cli {
+    pub fn verbose_period(&self) -> Option<Duration> {
+        self.verbose.flatten()
+    }
 }
 
 #[cfg(test)]

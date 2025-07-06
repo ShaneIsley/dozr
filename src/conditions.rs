@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
-use crate::verbose_wait;
+use std::time::{Duration, SystemTime};
+use crate::{adaptive_verbose_wait, verbose_wait};
 
 // 1. Define a dedicated trait for jitter generation.
 // This makes the dependency explicit and easy to mock.
@@ -150,18 +150,31 @@ impl WaitCondition for DurationWait {
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
         let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
 
-        if let Some(display_interval) = self.verbose {
-            let display_fn = |remaining: Duration| {
-                if remaining.is_zero() {
-                    eprintln!("Wait complete.");
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                if self.verbose.is_some() {
+                    let display_fn = |remaining: Duration| {
+                        if remaining.is_zero() {
+                            eprintln!("Wait complete.");
+                        } else {
+                            eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                        }
+                    };
+                    adaptive_verbose_wait(sleep_duration, display_fn);
                 } else {
-                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                    thread::sleep(sleep_duration);
                 }
-            };
-            verbose_wait(sleep_duration, display_interval, display_fn);
-        } else {
-            // Non-verbose path
-            thread::sleep(sleep_duration);
+            }
         }
         Ok(())
     }
