@@ -81,7 +81,10 @@ pub fn get_alignment_duration(align_to: Duration) -> Result<Duration> {
 }
 
 /// Performs the wait with verbose progress updates.
-pub fn verbose_wait(total_wait: Duration, update_period: Duration) {
+pub fn verbose_wait<F>(total_wait: Duration, update_period: Duration, display_fn: F)
+where
+    F: Fn(Duration),
+{
     let start = std::time::Instant::now();
     let mut remaining = total_wait;
 
@@ -99,8 +102,8 @@ pub fn verbose_wait(total_wait: Duration, update_period: Duration) {
         let eta = remaining.as_secs_f64();
 
         if eta > 0.0 {
-            println!("Waiting... {eta:.2}s remaining (ETA)");
+            display_fn(Duration::from_secs_f64(eta));
         }
     }
-    println!("Wait complete.");
+    display_fn(Duration::ZERO);
 }

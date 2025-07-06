@@ -35,7 +35,7 @@ fn test_verbose_output_includes_eta() {
     cmd.args(&["--duration", "2s", "--verbose"])
         .assert()
         .success()
-        .stderr(str::contains("Waiting for").and(str::contains("ETA:")));
+        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn test_verbose_custom_update_period() {
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
 
-    assert!(str::contains("ETA:").eval(&stderr_str));
+    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn test_verbose_adaptive_short_wait() {
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
 
-    assert!(str::contains("ETA:").eval(&stderr_str));
+    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_verbose_adaptive_long_wait() {
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
 
-    assert!(str::contains("ETA:").eval(&stderr_str));
+    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
 }
 
 #[test]

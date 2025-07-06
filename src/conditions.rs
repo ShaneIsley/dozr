@@ -1,7 +1,8 @@
+use crate::verbose_wait;
 use anyhow::Result;
 use rand::Rng;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 // 1. Define a dedicated trait for jitter generation.
 // This makes the dependency explicit and easy to mock.
@@ -36,8 +37,8 @@ pub trait WaitCondition {
 
 pub struct DurationWait {
     pub duration: Duration,
-    pub jitter: Option<Duration>,
     pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
 }
 
 impl DurationWait {
@@ -46,18 +47,6 @@ impl DurationWait {
         let max_jitter = self.jitter.unwrap_or(Duration::ZERO);
         let random_jitter = jitter_gen.generate(max_jitter);
         self.duration + random_jitter
-    }
-}
-
-// Helper function to format Duration into a human-readable string
-fn format_duration(duration: Duration) -> String {
-    let secs = duration.as_secs();
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m {}s", secs / 60, secs % 60)
-    } else {
-        format!("{}h {}m {}s", secs / 3600, (secs % 3600) / 60, secs % 60)
     }
 }
 
@@ -81,30 +70,14 @@ impl WaitCondition for TimeAlignWait {
         };
 
         if let Some(display_interval) = self.verbose {
-            eprintln!(
-                "Aligning to next {} interval. Waiting for {}",
-                format_duration(self.align_interval),
-                format_duration(sleep_duration)
-            );
-
-            let start_time = Instant::now();
-            let mut next_display_time = start_time + display_interval;
-
-            while start_time.elapsed() < sleep_duration {
-                let current_time = Instant::now();
-
-                if current_time >= next_display_time {
-                    let remaining_time = sleep_duration
-                        .checked_sub(start_time.elapsed())
-                        .unwrap_or(Duration::ZERO);
-                    eprintln!("ETA: {}", format_duration(remaining_time));
-                    next_display_time = current_time + display_interval;
+            let display_fn = |remaining: Duration| {
+                if remaining.is_zero() {
+                    eprintln!("Wait complete.");
+                } else {
+                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
                 }
-                let time_until_next_display = next_display_time.saturating_duration_since(current_time);
-                thread::sleep(std::cmp::min(display_interval, time_until_next_display));
-            }
-
-            eprintln!("Alignment complete.");
+            };
+            verbose_wait(sleep_duration, display_interval, display_fn);
         } else {
             thread::sleep(sleep_duration);
         }
@@ -126,29 +99,14 @@ impl WaitCondition for ProbabilisticWait {
         if roll <= self.probability {
             // Perform the actual sleep, potentially with verbose output
             if let Some(display_interval) = self.verbose {
-                eprintln!(
-                    "Probabilistic wait: Sleeping for {} (probability: {})",
-                    format_duration(self.duration),
-                    self.probability
-                );
-
-                let start_time = Instant::now();
-                let mut next_display_time = start_time + display_interval;
-
-                while start_time.elapsed() < self.duration {
-                    let current_time = Instant::now();
-
-                    if current_time >= next_display_time {
-                        let remaining_time = self.duration
-                            .checked_sub(start_time.elapsed())
-                            .unwrap_or(Duration::ZERO);
-                        eprintln!("ETA: {}", format_duration(remaining_time));
-                        next_display_time = current_time + display_interval;
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
                     }
-                    let time_until_next_display = next_display_time.saturating_duration_since(current_time);
-                    thread::sleep(std::cmp::min(display_interval, time_until_next_display));
-                }
-                eprintln!("Probabilistic wait complete.");
+                };
+                verbose_wait(self.duration, display_interval, display_fn);
             } else {
                 // Non-verbose path
                 thread::sleep(self.duration);
@@ -170,31 +128,14 @@ impl WaitCondition for DurationWait {
         let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
 
         if let Some(display_interval) = self.verbose {
-            eprintln!(
-                "Waiting for {} (base: {}, jitter: {})",
-                format_duration(sleep_duration),
-                format_duration(self.duration),
-                format_duration(self.jitter.unwrap_or(Duration::ZERO))
-            );
-
-            let start_time = Instant::now();
-            let mut next_display_time = start_time + display_interval;
-
-            while start_time.elapsed() < sleep_duration {
-                let current_time = Instant::now();
-
-                if current_time >= next_display_time {
-                    let remaining_time = sleep_duration
-                        .checked_sub(start_time.elapsed())
-                        .unwrap_or(Duration::ZERO);
-                    eprintln!("ETA: {}", format_duration(remaining_time));
-                    next_display_time = current_time + display_interval;
+            let display_fn = |remaining: Duration| {
+                if remaining.is_zero() {
+                    eprintln!("Wait complete.");
+                } else {
+                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
                 }
-                let time_until_next_display = next_display_time.saturating_duration_since(current_time);
-                thread::sleep(std::cmp::min(display_interval, time_until_next_display));
-            }
-
-            eprintln!("Wait complete.");
+            };
+            verbose_wait(sleep_duration, display_interval, display_fn);
         } else {
             // Non-verbose path
             thread::sleep(sleep_duration);
