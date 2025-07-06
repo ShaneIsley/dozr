@@ -1,42 +1,27 @@
-use clap::Parser;
-use humantime::parse_duration;
+use clap::{ArgGroup, Parser};
 use std::time::Duration;
 
-fn parse_positive_duration(s: &str) -> Result<Duration, String> {
-    parse_duration(s).map_err(|e| e.to_string())
-}
-
-fn parse_probability(s: &str) -> Result<f64, String> {
-    let prob: f64 = s.parse().map_err(|_| format!("Invalid float value: {s}"))?;
-    if !(0.0..=1.0).contains(&prob) {
-        Err(format!("Probability must be between 0.0 and 1.0, inclusive: {s}"))
-    } else {
-        Ok(prob)
-    }
-}
-
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
+#[command(group = ArgGroup::new("wait_type").required(true).multiple(false))]
 pub struct Cli {
-    /// The duration to wait (e.g., "5s", "1m30s"). Must be a non-negative duration.
-    #[arg(value_parser = parse_positive_duration, group = "wait_type")]
+    /// The base duration to wait (e.g., "1s", "500ms").
+    #[arg(long, value_parser = humantime::parse_duration, group = "wait_type")]
     pub duration: Option<Duration>,
 
-    /// An optional jitter to add to the duration (e.g., "1s", "500ms"). Must be a non-negative duration.
-    #[arg(long, value_parser = parse_positive_duration)]
+    /// Add a random duration of jitter (e.g., "100ms").
+    #[arg(short, long, value_parser = humantime::parse_duration)]
     pub jitter: Option<Duration>,
 
-    /// Enable verbose output. Optionally specify update period (e.g., "500ms").
-    /// If no value is given, defaults to 1 second (or adaptive for short waits).
-    /// Must be a non-negative duration.
-    #[arg(long, short, value_parser = parse_positive_duration, num_args = 0..=1, default_missing_value = "1s")]
-    pub verbose: Option<Duration>,
-
-    /// Align the wait to the next even interval (e.g., "5m", "1h"). Must be a non-negative duration.
-    #[arg(long, value_parser = parse_positive_duration, group = "wait_type")]
+    /// Align the wait to the next even interval of the given duration (e.g., "1m", "30s").
+    #[arg(short, long, value_parser = humantime::parse_duration, group = "wait_type")]
     pub align: Option<Duration>,
 
-    /// The probability (0.0-1.0) that the wait will occur. Only applicable with DURATION.
-    #[arg(long, value_parser = parse_probability, requires = "duration")]
+    /// Enable verbose output, with an optional update period (e.g., "250ms").
+    #[arg(short, long, value_name = "UPDATE_PERIOD", value_parser = humantime::parse_duration, num_args = 0..=1, default_missing_value = "1s")]
+    pub verbose: Option<Duration>,
+
+    /// Wait only with a certain probability (0.0 to 1.0).
+    #[arg(short, long)]
     pub probability: Option<f64>,
 }
