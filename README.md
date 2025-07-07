@@ -47,17 +47,24 @@ dozr 1s --jitter 500ms
 
 ### Verbose Output
 
-Get detailed feedback during the wait. When `--verbose` is used without a specified period, `dozr` intelligently adapts the update frequency based on the remaining time (e.g., less frequent for long waits, more frequent as the end approaches).
+Get detailed feedback during the wait.
 
-```bash
-dozr 3s --verbose
-```
+-   **Adaptive Verbose:** When `--verbose` is used without a specified period, `dozr` intelligently adapts the update frequency based on the remaining time:
+    -   0-20 seconds remaining: updates every 1 second.
+    -   21-60 seconds remaining: updates every 5 seconds.
+    -   1-5 minutes remaining: updates every 10 seconds.
+    -   6-10 minutes remaining: updates every 15 seconds.
+    -   Over 10 minutes remaining: updates every 1 minute.
 
-To specify a fixed update period (e.g., every 250 milliseconds):
+    ```bash
+    dozr 3s --verbose
+    ```
 
-```bash
-dozr 10s --verbose 250ms
-```
+-   **Fixed Verbose:** To specify a fixed update period (e.g., every 250 milliseconds):
+
+    ```bash
+    dozr 10s --verbose 250ms
+    ```
 
 Combine with jitter:
 

@@ -2,6 +2,8 @@ use assert_cmd::Command;
 use predicates::prelude::{Predicate, PredicateBooleanExt};
 use predicates::str;
 use std::time::Instant;
+use std::time::Duration;
+use dozr::cli::Cli;
 
 #[test]
 fn test_jitter_flag_accepts_argument() {
@@ -219,16 +221,12 @@ fn test_until_time_in_future() {
     let target_time_str = target_time.format("%H:%M:%S").to_string();
 
     let start_time = Instant::now();
-    cmd.args(&["--until", &target_time_str])
-        .assert()
-        .success();
+    cmd.args(&["--until", &target_time_str]).assert().success();
     let elapsed = start_time.elapsed();
 
     assert!(elapsed >= chrono::Duration::seconds(1).to_std().unwrap());
     assert!(elapsed <= chrono::Duration::seconds(3).to_std().unwrap());
 }
-
-
 
 #[test]
 fn test_parse_time_until_hh_mm() {
@@ -237,7 +235,78 @@ fn test_parse_time_until_hh_mm() {
     let target_time = now + chrono::Duration::minutes(1);
     let target_time_str = target_time.format("%H:%M").to_string();
 
-    cmd.args(&["--until", &target_time_str])
-        .assert()
-        .success();
+    cmd.args(&["--until", &target_time_str]).assert().success();
+}
+
+// New tests for Cli helper methods
+#[test]
+fn test_is_adaptive_verbose() {
+    // Adaptive verbose (1ns sentinel)
+    let cli_adaptive = Cli { 
+        duration: None, 
+        jitter: None, 
+        align: None, 
+        verbose: Some(Duration::from_nanos(1)), 
+        probability: None, 
+        until: None 
+    };
+    assert!(cli_adaptive.is_adaptive_verbose());
+
+    // Fixed verbose (e.g., 1s)
+    let cli_fixed = Cli { 
+        duration: None, 
+        jitter: None, 
+        align: None, 
+        verbose: Some(Duration::from_secs(1)), 
+        probability: None, 
+        until: None 
+    };
+    assert!(!cli_fixed.is_adaptive_verbose());
+
+    // No verbose
+    let cli_none = Cli { 
+        duration: None, 
+        jitter: None, 
+        align: None, 
+        verbose: None, 
+        probability: None, 
+        until: None 
+    };
+    assert!(!cli_none.is_adaptive_verbose());
+}
+
+#[test]
+fn test_verbose_period() {
+    // Adaptive verbose (1ns sentinel) -> Should return None
+    let cli_adaptive = Cli { 
+        duration: None, 
+        jitter: None, 
+        align: None, 
+        verbose: Some(Duration::from_nanos(1)), 
+        probability: None, 
+        until: None 
+    };
+    assert_eq!(cli_adaptive.verbose_period(), None);
+
+    // Fixed verbose (e.g., 1s) -> Should return Some(1s)
+    let cli_fixed = Cli { 
+        duration: None, 
+        jitter: None, 
+        align: None, 
+        verbose: Some(Duration::from_secs(1)), 
+        probability: None, 
+        until: None 
+    };
+    assert_eq!(cli_fixed.verbose_period(), Some(Duration::from_secs(1)));
+
+    // No verbose -> Should return None
+    let cli_none = Cli { 
+        duration: None, 
+        jitter: None, 
+        align: None, 
+        verbose: None, 
+        probability: None, 
+        until: None 
+    };
+    assert_eq!(cli_none.verbose_period(), None);
 }

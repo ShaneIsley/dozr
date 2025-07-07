@@ -210,4 +210,31 @@ mod tests {
         });
         assert!(call_count > 0);
     }
+
+    #[test]
+    fn test_get_adaptive_update_period() {
+        // 0-20s: 1s
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(0)), Duration::from_secs(1));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(10)), Duration::from_secs(1));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(20)), Duration::from_secs(1));
+
+        // 21-60s: 5s
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(21)), Duration::from_secs(5));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(40)), Duration::from_secs(5));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(60)), Duration::from_secs(5));
+
+        // 1-5m (61-300s): 10s
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(61)), Duration::from_secs(10));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(150)), Duration::from_secs(10));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(300)), Duration::from_secs(10));
+
+        // 6-10m (301-600s): 15s
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(301)), Duration::from_secs(15));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(450)), Duration::from_secs(15));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(600)), Duration::from_secs(15));
+
+        // 10m+ (601s+): 1m
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(601)), Duration::from_secs(60));
+        assert_eq!(get_adaptive_update_period(Duration::from_secs(1000)), Duration::from_secs(60));
+    }
 }

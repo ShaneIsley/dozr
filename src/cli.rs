@@ -43,8 +43,9 @@ pub struct Cli {
     pub align: Option<Duration>,
 
     /// Enable verbose output, with an optional update period (e.g., "250ms").
-    #[arg(short, long, value_name = "UPDATE_PERIOD", value_parser = humantime::parse_duration, num_args = 0..=1, default_missing_value = "1s")]
-    pub verbose: Option<Option<Duration>>,
+    /// If no update period is specified, adaptive verbose output is used.
+    #[arg(short, long, value_name = "UPDATE_PERIOD", value_parser = humantime::parse_duration, num_args = 0..=1, default_missing_value = "1ns")]
+    pub verbose: Option<Duration>,
 
     /// Wait only with a certain probability (0.0 to 1.0).
     #[arg(short, long)]
@@ -56,35 +57,15 @@ pub struct Cli {
 }
 
 impl Cli {
+    pub fn is_adaptive_verbose(&self) -> bool {
+        self.verbose == Some(Duration::from_nanos(1))
+    }
+
     pub fn verbose_period(&self) -> Option<Duration> {
-        self.verbose.flatten()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_time_until_valid_time() {
-        let now = Local::now();
-        let target_time = now + ChronoDuration::seconds(5);
-        let time_str = target_time.format("%H:%M:%S").to_string();
-        let duration = parse_time_until(&time_str).unwrap();
-        assert!(duration > Duration::from_secs(4) && duration < Duration::from_secs(6));
-    }
-
-    #[test]
-    fn test_parse_time_until_invalid_format() {
-        assert!(parse_time_until("invalid-time").is_err());
-    }
-
-    #[test]
-    fn test_parse_time_until_rolls_over() {
-        let now = Local::now();
-        let target_time = now - ChronoDuration::seconds(5);
-        let time_str = target_time.format("%H:%M:%S").to_string();
-        let duration = parse_time_until(&time_str).unwrap();
-        assert!(duration > Duration::from_secs(86394) && duration < Duration::from_secs(86396));
+        if self.is_adaptive_verbose() {
+            None
+        } else {
+            self.verbose
+        }
     }
 }

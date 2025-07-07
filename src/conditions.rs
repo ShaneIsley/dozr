@@ -1,7 +1,7 @@
 use crate::{adaptive_verbose_wait, verbose_wait};
 use anyhow::Result;
 use rand::Rng;
-use std::thread;
+
 use std::time::{Duration, SystemTime};
 
 // 1. Define a dedicated trait for jitter generation.
@@ -69,17 +69,27 @@ impl WaitCondition for TimeAlignWait {
             }
         };
 
-        if let Some(display_interval) = self.verbose {
-            let display_fn = |remaining: Duration| {
-                if remaining.is_zero() {
-                    eprintln!("Wait complete.");
-                } else {
-                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
-                }
-            };
-            verbose_wait(sleep_duration, display_interval, display_fn);
-        } else {
-            thread::sleep(sleep_duration);
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
         }
         Ok(())
     }
@@ -98,17 +108,27 @@ pub struct UntilTimeWait {
 
 impl WaitCondition for UntilTimeWait {
     fn wait(&self) -> Result<()> {
-        if let Some(display_interval) = self.verbose {
-            let display_fn = |remaining: Duration| {
-                if remaining.is_zero() {
-                    eprintln!("Wait complete.");
-                } else {
-                    eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
-                }
-            };
-            verbose_wait(self.sleep_duration, display_interval, display_fn);
-        } else {
-            thread::sleep(self.sleep_duration);
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(self.sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(self.sleep_duration, display_fn);
+            }
         }
         Ok(())
     }
@@ -120,21 +140,29 @@ impl WaitCondition for ProbabilisticWait {
         let roll: f64 = rng.random_range(0.0..1.0);
 
         if roll <= self.probability {
-            // Perform the actual sleep, potentially with verbose output
-            if let Some(display_interval) = self.verbose {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        eprintln!("Wait complete.");
-                    } else {
-                        eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(self.duration, display_interval, display_fn);
-            } else {
-                // Non-verbose path
-                thread::sleep(self.duration);
+            match self.verbose {
+                Some(display_interval) => {
+                    let display_fn = |remaining: Duration| {
+                        if remaining.is_zero() {
+                            eprintln!("Wait complete.");
+                        } else {
+                            eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                        }
+                    };
+                    verbose_wait(self.duration, display_interval, display_fn);
+                }
+                None => {
+                    let display_fn = |remaining: Duration| {
+                        if remaining.is_zero() {
+                            eprintln!("Wait complete.");
+                        } else {
+                            eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                        }
+                    };
+                    adaptive_verbose_wait(self.duration, display_fn);
+                }
             }
-        } else if self.verbose.is_some() {
+        } else if self.verbose.is_some() || self.verbose.is_none() {
             eprintln!(
                 "Probabilistic wait: Skipping sleep (probability: {}, roll: {})",
                 self.probability, roll
@@ -156,24 +184,20 @@ impl WaitCondition for DurationWait {
                     if remaining.is_zero() {
                         eprintln!("Wait complete.");
                     } else {
-                        eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
+                        eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
                     }
                 };
                 verbose_wait(sleep_duration, display_interval, display_fn);
             }
             None => {
-                if self.verbose.is_some() {
-                    let display_fn = |remaining: Duration| {
-                        if remaining.is_zero() {
-                            eprintln!("Wait complete.");
-                        } else {
-                            eprintln!("[DOZR] Time remaining: {:.2}s", remaining.as_secs_f64());
-                        }
-                    };
-                    adaptive_verbose_wait(sleep_duration, display_fn);
-                } else {
-                    thread::sleep(sleep_duration);
-                }
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        eprintln!("Wait complete.");
+                    } else {
+                        eprintln!("[DOZR] Time remaining: {:.0}s", remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
             }
         }
         Ok(())
