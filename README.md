@@ -21,7 +21,7 @@ cargo install dozr
 Alternatively, to build and run from source:
 
 ```bash
-git clone https://github.com/your-username/dozr.git # Replace with actual repo URL
+git clone https://github.com/ShaneIsley/dozr.git
 cd dozr
 cargo build --release
 ./target/release/dozr --help
