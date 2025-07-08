@@ -154,6 +154,18 @@ where
         let current_update_period = get_adaptive_update_period(remaining);
 
         let remaining_secs = remaining.as_secs();
+
+        let time_to_next_marker = if current_update_period.as_secs() == 0 {
+            remaining
+        } else {
+            let remainder = remaining_secs % current_update_period.as_secs();
+            if remainder == 0 {
+                current_update_period
+            } else {
+                Duration::from_secs(current_update_period.as_secs() - remainder)
+            }
+        };
+
         let time_to_next_threshold = if remaining_secs > 600 {
             remaining.saturating_sub(Duration::from_secs(600))
         } else if remaining_secs > 300 {
@@ -166,7 +178,7 @@ where
             remaining
         };
 
-        let sleep_duration = std::cmp::min(current_update_period, time_to_next_threshold);
+        let sleep_duration = std::cmp::min(current_update_period, std::cmp::min(time_to_next_threshold, time_to_next_marker));
         let sleep_duration = sleep_duration.max(Duration::from_millis(1)); // Ensure at least 1ms sleep to avoid busy-waiting
 
         if sleep_duration > Duration::ZERO {
