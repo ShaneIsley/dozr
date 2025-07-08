@@ -90,6 +90,7 @@ pub fn verbose_wait<F>(total_wait: Duration, update_period: Duration, mut displa
 where
     F: FnMut(Duration),
 {
+    display_fn(total_wait); // Print initial remaining time
     let start = std::time::Instant::now();
     let mut remaining = total_wait;
 
@@ -118,6 +119,7 @@ pub fn adaptive_verbose_wait<F>(total_wait: Duration, mut display_fn: F)
 where
     F: FnMut(Duration),
 {
+    display_fn(total_wait); // Print initial remaining time
     let start = std::time::Instant::now();
     let mut remaining = total_wait;
 
