@@ -90,28 +90,40 @@ pub fn verbose_wait<F>(total_wait: Duration, update_period: Duration, mut displa
 where
     F: FnMut(Duration),
 {
-    display_fn(total_wait); // Print initial remaining time
     let start = std::time::Instant::now();
-    let mut remaining = total_wait;
+    let mut last_displayed_eta: Option<u64> = None;
 
-    while remaining > Duration::ZERO {
+    loop {
         let elapsed = start.elapsed();
-        let current_wait = if remaining < update_period {
-            remaining
-        } else {
-            update_period
-        };
-
-        thread::sleep(current_wait);
-
-        remaining = total_wait.saturating_sub(elapsed);
+        let remaining = total_wait.saturating_sub(elapsed);
         let eta = remaining.as_secs_f64();
+        let rounded_eta = eta.round() as u64;
 
-        if eta > 0.0 {
-            display_fn(Duration::from_secs(eta.round() as u64));
+        if remaining == Duration::ZERO {
+            display_fn(Duration::ZERO);
+            break;
+        }
+
+        // Only display if ETA has changed or it's the very first display
+        if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
+            display_fn(Duration::from_secs(rounded_eta));
+            last_displayed_eta = Some(rounded_eta);
+        }
+
+        let next_update_time = elapsed + update_period;
+        let sleep_duration = next_update_time.saturating_sub(elapsed);
+
+        if sleep_duration > Duration::ZERO {
+            thread::sleep(sleep_duration);
+        } else if remaining > Duration::ZERO {
+            // If sleep_duration is zero or negative, but there's still time remaining,
+            // yield to ensure other threads can run and prevent busy-waiting.
+            thread::yield_now();
+        } else {
+            // If no time remaining, break the loop
+            break;
         }
     }
-    display_fn(Duration::ZERO);
 }
 
 /// Performs the wait with adaptive verbose progress updates.
@@ -119,29 +131,41 @@ pub fn adaptive_verbose_wait<F>(total_wait: Duration, mut display_fn: F)
 where
     F: FnMut(Duration),
 {
-    display_fn(total_wait); // Print initial remaining time
     let start = std::time::Instant::now();
-    let mut remaining = total_wait;
+    let mut last_displayed_eta: Option<u64> = None;
 
-    while remaining > Duration::ZERO {
+    loop {
         let elapsed = start.elapsed();
-        let update_period = get_adaptive_update_period(remaining);
-        let current_wait = if remaining < update_period {
-            remaining
-        } else {
-            update_period
-        };
-
-        thread::sleep(current_wait);
-
-        remaining = total_wait.saturating_sub(elapsed);
+        let remaining = total_wait.saturating_sub(elapsed);
         let eta = remaining.as_secs_f64();
+        let rounded_eta = eta.round() as u64;
 
-        if eta > 0.0 {
-            display_fn(Duration::from_secs(eta.round() as u64));
+        if remaining == Duration::ZERO {
+            display_fn(Duration::ZERO);
+            break;
+        }
+
+        // Only display if ETA has changed or it's the very first display
+        if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
+            display_fn(Duration::from_secs(rounded_eta));
+            last_displayed_eta = Some(rounded_eta);
+        }
+
+        let update_period = get_adaptive_update_period(remaining);
+        let next_update_time = elapsed + update_period;
+        let sleep_duration = next_update_time.saturating_sub(elapsed);
+
+        if sleep_duration > Duration::ZERO {
+            thread::sleep(sleep_duration);
+        } else if remaining > Duration::ZERO {
+            // If sleep_duration is zero or negative, but there's still time remaining,
+            // yield to ensure other threads can run and prevent busy-waiting.
+            thread::yield_now();
+        } else {
+            // If no time remaining, break the loop
+            break;
         }
     }
-    display_fn(Duration::ZERO);
 }
 
 fn get_adaptive_update_period(remaining: Duration) -> Duration {
