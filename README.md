@@ -6,6 +6,12 @@
 
 -   **Simple Duration Wait:** Pause for a specified duration (e.g., `5s`, `1m30s`).
 -   **Randomized Jitter:** Add a random delay on top of the base duration for more natural or distributed waits.
+-   **Statistical Distributions:** Wait for a duration sampled from various statistical distributions:
+    -   **Normal Distribution:** For waits centered around a mean with a given standard deviation.
+    -   **Exponential Distribution:** For modeling inter-arrival times or random events.
+    -   **Log-Normal Distribution:** For waits where the logarithm of the duration is normally distributed.
+    -   **Pareto Distribution:** For modeling phenomena where a small number of events account for a large proportion of the total.
+    -   **Weibull Distribution:** For modeling reliability, failure rates, and extreme value phenomena.
 -   **Verbose Output:** Get real-time feedback on the wait progress. When `--verbose` is used without a specified period, `dozr` intelligently adapts the update frequency (see "Adaptive Verbose" below). A custom, fixed update period can also be specified (e.g., `--verbose 250ms`).
 -   **Time Alignment:** Align the wait to the next even interval (e.g., `xx:00`, `xx:15`, `xx:30`).
 -   **Probabilistic Delay:** Wait for a duration only with a specified probability (0.0-1.0).
@@ -118,6 +124,48 @@ Wait for 1 second with a 0% chance (will not wait):
 
 ```bash
 dozr 1s --probability 0.0
+```
+
+### Statistical Distribution Waits
+
+#### Normal Distribution
+
+Wait for a duration sampled from a Normal distribution with a mean of 1 second and a standard deviation of 0.1:
+
+```bash
+dozr --normal-mean 1s --normal-std-dev 0.1
+```
+
+#### Exponential Distribution
+
+Wait for a duration sampled from an Exponential distribution with a lambda (rate parameter) of 0.5:
+
+```bash
+dozr --exponential-lambda 0.5
+```
+
+#### Log-Normal Distribution
+
+Wait for a duration sampled from a Log-Normal distribution with a mean of 1 second and a standard deviation of 0.1:
+
+```bash
+dozr --log-normal-mean 1s --log-normal-std-dev 0.1
+```
+
+#### Pareto Distribution
+
+Wait for a duration sampled from a Pareto distribution with a scale of 1.0 and a shape of 1.5:
+
+```bash
+dozr --pareto-scale 1.0 --pareto-shape 1.5
+```
+
+#### Weibull Distribution
+
+Wait for a duration sampled from a Weibull distribution with a shape of 1.5 and a scale of 1.0:
+
+```bash
+dozr --weibull-shape 1.5 --weibull-scale 1.0
 ```
 
 ## Contributing

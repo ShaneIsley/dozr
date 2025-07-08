@@ -1,9 +1,6 @@
 use anyhow::Result;
-use chrono::{DateTime, Duration as ChronoDuration, Local};
 use clap::Parser;
-use rand::Rng;
-use std::thread;
-use std::time::Duration;
+
 
 pub mod cli;
 pub mod conditions;
@@ -11,84 +8,68 @@ pub mod conditions;
 pub fn run() -> Result<()> {
     let args = cli::Cli::parse();
 
-    let condition: Box<dyn conditions::WaitCondition> =
-        match (args.duration, args.align, args.until) {
-            (Some(duration), None, None) => {
-                if let Some(probability) = args.probability {
-                    Box::new(conditions::ProbabilisticWait {
-                        duration,
-                        probability,
-                        verbose: args.verbose_period(),
-                    })
-                } else {
-                    Box::new(conditions::DurationWait {
-                        duration,
-                        jitter: args.jitter,
-                        verbose: args.verbose_period(),
-                    })
-                }
+    let condition: Box<dyn conditions::WaitCondition> = match args.get_wait_type() {
+        cli::WaitType::Duration(duration) => {
+            if let Some(probability) = args.probability {
+                Box::new(conditions::ProbabilisticWait {
+                    duration,
+                    probability,
+                    verbose: args.verbose_period(),
+                })
+            } else {
+                Box::new(conditions::DurationWait {
+                    duration,
+                    jitter: args.jitter,
+                    verbose: args.verbose_period(),
+                })
             }
-            (None, Some(align_to), None) => Box::new(conditions::TimeAlignWait {
-                align_interval: align_to,
-                verbose: args.verbose_period(),
-            }),
-            (None, None, Some(until_duration)) => Box::new(conditions::UntilTimeWait {
-                sleep_duration: until_duration,
-                verbose: args.verbose_period(),
-            }),
-            // This case is now unreachable because of the clap group validation
-            _ => unreachable!(),
-        };
+        }
+        cli::WaitType::Normal { mean, std_dev } => Box::new(conditions::NormalWait {
+            mean,
+            std_dev,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
+        cli::WaitType::Exponential { lambda } => Box::new(conditions::ExponentialWait {
+            lambda,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
+        cli::WaitType::LogNormal { mean, std_dev } => Box::new(conditions::LogNormalWait {
+            mean,
+            std_dev,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
+        cli::WaitType::Pareto { scale, shape } => Box::new(conditions::ParetoWait {
+            scale,
+            shape,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
+        cli::WaitType::Weibull { shape, scale } => Box::new(conditions::WeibullWait {
+            shape,
+            scale,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
+        cli::WaitType::Align(align_interval) => Box::new(conditions::TimeAlignWait {
+            align_interval,
+            verbose: args.verbose_period(),
+        }),
+        cli::WaitType::Until(sleep_duration) => Box::new(conditions::UntilTimeWait {
+            sleep_duration,
+            verbose: args.verbose_period(),
+        }),
+    };
 
     condition.wait()
 }
 
-/// Calculates the total wait duration, including a base duration and optional jitter.
-pub fn get_total_wait_duration(
-    base_duration: Duration,
-    jitter: Option<Duration>,
-) -> Result<Duration> {
-    let jitter_duration = if let Some(j) = jitter {
-        let j_nanos = j.as_nanos();
-        if j_nanos == 0 {
-            Duration::new(0, 0)
-        } else {
-            let random_jitter = rand::rng().random_range(0..=j_nanos);
-            Duration::from_nanos(random_jitter as u64)
-        }
-    } else {
-        Duration::new(0, 0)
-    };
-
-    Ok(base_duration + jitter_duration)
-}
-
-/// Calculates the duration to wait until the next alignment interval.
-pub fn get_alignment_duration(align_to: Duration) -> Result<Duration> {
-    let now: DateTime<Local> = Local::now();
-    let align_to_chrono = ChronoDuration::from_std(align_to)?;
-
-    let since_epoch = now.timestamp_nanos_opt().unwrap_or_default();
-    let align_to_nanos = align_to_chrono.num_nanoseconds().unwrap_or_default();
-
-    if align_to_nanos == 0 {
-        return Ok(Duration::new(0, 0));
-    }
-
-    let remainder = since_epoch % align_to_nanos;
-    let wait_nanos = if remainder == 0 {
-        0
-    } else {
-        align_to_nanos - remainder
-    };
-
-    Ok(Duration::from_nanos(wait_nanos as u64))
-}
-
 /// Performs the wait with verbose progress updates.
-pub fn verbose_wait<F>(total_wait: Duration, update_period: Duration, mut display_fn: F)
+pub fn verbose_wait<F>(total_wait: std::time::Duration, update_period: std::time::Duration, mut display_fn: F)
 where
-    F: FnMut(Duration),
+    F: FnMut(std::time::Duration),
 {
     let start = std::time::Instant::now();
     let mut last_displayed_eta: Option<u64> = None;
@@ -99,26 +80,26 @@ where
         let eta = remaining.as_secs_f64();
         let rounded_eta = eta.round() as u64;
 
-        if remaining == Duration::ZERO {
-            display_fn(Duration::ZERO);
+        if remaining == std::time::Duration::ZERO {
+            display_fn(std::time::Duration::ZERO);
             break;
         }
 
         // Only display if ETA has changed or it's the very first display
         if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
-            display_fn(Duration::from_secs(rounded_eta));
+            display_fn(std::time::Duration::from_secs(rounded_eta));
             last_displayed_eta = Some(rounded_eta);
         }
 
         let next_update_time = elapsed + update_period;
         let sleep_duration = next_update_time.saturating_sub(elapsed);
 
-        if sleep_duration > Duration::ZERO {
-            thread::sleep(sleep_duration);
-        } else if remaining > Duration::ZERO {
+        if sleep_duration > std::time::Duration::ZERO {
+            std::thread::sleep(sleep_duration);
+        } else if remaining > std::time::Duration::ZERO {
             // If sleep_duration is zero or negative, but there's still time remaining,
             // yield to ensure other threads can run and prevent busy-waiting.
-            thread::yield_now();
+            std::thread::yield_now();
         } else {
             // If no time remaining, break the loop
             break;
@@ -127,9 +108,9 @@ where
 }
 
 /// Performs the wait with adaptive verbose progress updates.
-pub fn adaptive_verbose_wait<F>(total_wait: Duration, mut display_fn: F)
+pub fn adaptive_verbose_wait<F>(total_wait: std::time::Duration, mut display_fn: F)
 where
-    F: FnMut(Duration),
+    F: FnMut(std::time::Duration),
 {
     let start = std::time::Instant::now();
     let mut last_displayed_eta: Option<u64> = None;
@@ -140,14 +121,14 @@ where
         let eta = remaining.as_secs_f64();
         let rounded_eta = eta.round() as u64;
 
-        if remaining == Duration::ZERO {
-            display_fn(Duration::ZERO);
+        if remaining == std::time::Duration::ZERO {
+            display_fn(std::time::Duration::ZERO);
             break;
         }
 
         // Only display if ETA has changed or it's the very first display
         if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
-            display_fn(Duration::from_secs(rounded_eta));
+            display_fn(std::time::Duration::from_secs(rounded_eta));
             last_displayed_eta = Some(rounded_eta);
         }
 
@@ -159,30 +140,30 @@ where
             remaining
         } else {
             let target_marker_secs = (remaining_secs / current_update_period.as_secs()) * current_update_period.as_secs();
-            remaining.saturating_sub(Duration::from_secs(target_marker_secs))
+            remaining.saturating_sub(std::time::Duration::from_secs(target_marker_secs))
         };
 
         let time_to_next_threshold = if remaining_secs > 600 {
-            remaining.saturating_sub(Duration::from_secs(600))
+            remaining.saturating_sub(std::time::Duration::from_secs(600))
         } else if remaining_secs > 300 {
-            remaining.saturating_sub(Duration::from_secs(300))
+            remaining.saturating_sub(std::time::Duration::from_secs(300))
         } else if remaining_secs > 60 {
-            remaining.saturating_sub(Duration::from_secs(60))
+            remaining.saturating_sub(std::time::Duration::from_secs(60))
         } else if remaining_secs > 20 {
-            remaining.saturating_sub(Duration::from_secs(20))
+            remaining.saturating_sub(std::time::Duration::from_secs(20))
         } else {
             remaining
         };
 
         let sleep_duration = std::cmp::min(current_update_period, std::cmp::min(time_to_next_threshold, time_to_next_marker));
-        let sleep_duration = sleep_duration.max(Duration::from_millis(1)); // Ensure at least 1ms sleep to avoid busy-waiting
+        let sleep_duration = sleep_duration.max(std::time::Duration::from_millis(1)); // Ensure at least 1ms sleep to avoid busy-waiting
 
-        if sleep_duration > Duration::ZERO {
-            thread::sleep(sleep_duration);
-        } else if remaining > Duration::ZERO {
+        if sleep_duration > std::time::Duration::ZERO {
+            std::thread::sleep(sleep_duration);
+        } else if remaining > std::time::Duration::ZERO {
             // If sleep_duration is zero or negative, but there's still time remaining,
             // yield to ensure other threads can run and prevent busy-waiting.
-            thread::yield_now();
+            std::thread::yield_now();
         } else {
             // If no time remaining, break the loop
             break;
@@ -190,21 +171,21 @@ where
     }
 }
 
-fn get_adaptive_update_period(remaining: Duration) -> Duration {
+fn get_adaptive_update_period(remaining: std::time::Duration) -> std::time::Duration {
     let remaining_secs = remaining.as_secs();
 
     if remaining_secs <= 20 {
-        Duration::from_secs(1) // 0-20s: 1s
+        std::time::Duration::from_secs(1) // 0-20s: 1s
     } else if remaining_secs <= 60 {
-        Duration::from_secs(5) // 21-60s: 5s
+        std::time::Duration::from_secs(5) // 21-60s: 5s
     } else if remaining_secs <= 300 {
         // 5 minutes
-        Duration::from_secs(10) // 1-5m: 10s
+        std::time::Duration::from_secs(10) // 1-5m: 10s
     } else if remaining_secs <= 600 {
         // 10 minutes
-        Duration::from_secs(15) // 6-10m: 15s
+        std::time::Duration::from_secs(15) // 6-10m: 15s
     } else {
-        Duration::from_secs(60) // 10m+: 1m
+        std::time::Duration::from_secs(60) // 10m+: 1m
     }
 }
 
@@ -212,31 +193,6 @@ fn get_adaptive_update_period(remaining: Duration) -> Duration {
 mod tests {
     use super::*;
     use std::time::Duration;
-
-    #[test]
-    fn test_get_total_wait_duration_no_jitter() {
-        let base_duration = Duration::from_secs(1);
-        let total_wait = get_total_wait_duration(base_duration, None).unwrap();
-        assert_eq!(total_wait, base_duration);
-    }
-
-    #[test]
-    fn test_get_total_wait_duration_with_jitter() {
-        let base_duration = Duration::from_secs(1);
-        let jitter = Duration::from_millis(500);
-        let total_wait = get_total_wait_duration(base_duration, Some(jitter)).unwrap();
-        assert!(total_wait >= base_duration);
-        assert!(total_wait <= base_duration + jitter);
-    }
-
-    #[test]
-    fn test_get_alignment_duration() {
-        // This test is sensitive to the current time, so we can't assert a specific value.
-        // Instead, we'll just check that the function returns a duration.
-        let align_to = Duration::from_secs(10);
-        let wait_duration = get_alignment_duration(align_to).unwrap();
-        assert!(wait_duration <= align_to);
-    }
 
     #[test]
     fn test_verbose_wait() {

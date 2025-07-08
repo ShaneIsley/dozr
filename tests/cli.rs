@@ -127,7 +127,7 @@ fn test_duration_and_align_are_mutually_exclusive() {
 fn test_duration_or_align_is_required() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     cmd.assert().failure().stderr(str::contains(
-        "error: the following required arguments were not provided:\n  <--duration <DURATION>|--align <ALIGN>|--until <UNTIL>>",
+        "error: the following required arguments were not provided:\n  <--duration <DURATION>|--normal|--exponential|--log-normal|--pareto|--weibull|--align <ALIGN>|--until <UNTIL>>",
     ));
 }
 
@@ -244,6 +244,20 @@ fn test_is_adaptive_verbose() {
     // Adaptive verbose (1ns sentinel)
     let cli_adaptive = Cli { 
         duration: None, 
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
         jitter: None, 
         align: None, 
         verbose: Some(Duration::from_nanos(1)), 
@@ -255,6 +269,20 @@ fn test_is_adaptive_verbose() {
     // Fixed verbose (e.g., 1s)
     let cli_fixed = Cli { 
         duration: None, 
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
         jitter: None, 
         align: None, 
         verbose: Some(Duration::from_secs(1)), 
@@ -266,6 +294,20 @@ fn test_is_adaptive_verbose() {
     // No verbose
     let cli_none = Cli { 
         duration: None, 
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
         jitter: None, 
         align: None, 
         verbose: None, 
@@ -280,6 +322,20 @@ fn test_verbose_period() {
     // Adaptive verbose (1ns sentinel) -> Should return None
     let cli_adaptive = Cli { 
         duration: None, 
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
         jitter: None, 
         align: None, 
         verbose: Some(Duration::from_nanos(1)), 
@@ -291,6 +347,20 @@ fn test_verbose_period() {
     // Fixed verbose (e.g., 1s) -> Should return Some(1s)
     let cli_fixed = Cli { 
         duration: None, 
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
         jitter: None, 
         align: None, 
         verbose: Some(Duration::from_secs(1)), 
@@ -302,6 +372,20 @@ fn test_verbose_period() {
     // No verbose -> Should return None
     let cli_none = Cli { 
         duration: None, 
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
         jitter: None, 
         align: None, 
         verbose: None, 
@@ -309,4 +393,145 @@ fn test_verbose_period() {
         until: None 
     };
     assert_eq!(cli_none.verbose_period(), None);
+}
+
+#[test]
+fn test_normal_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--normal", "--normal-mean", "1s", "--normal-std-dev", "0.1"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_exponential_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--exponential", "--exponential-lambda", "0.5"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_log_normal_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--log-normal", "--log-normal-mean", "1s", "--log-normal-std-dev", "0.1"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_pareto_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--pareto", "--pareto-scale", "1.0", "--pareto-shape", "1.5"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_weibull_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--weibull", "--weibull-shape", "1.5", "--weibull-scale", "1.0"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_mutually_exclusive_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--duration", "1s", "--normal"])
+        .assert()
+        .failure()
+        .stderr(str::contains("the argument '--duration <DURATION>' cannot be used with '--normal'"));
+}
+
+#[test]
+fn test_normal_distribution_missing_param() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--normal", "--normal-mean", "1s"])
+        .assert()
+        .failure()
+        .stderr(str::contains("required arguments were not provided"));
+}
+
+#[test]
+fn test_normal_distribution_missing_all_params() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--normal"])
+        .assert()
+        .failure()
+        .stderr(str::contains("required arguments were not provided"));
+}
+
+#[test]
+fn test_exponential_distribution_invalid_lambda() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--exponential-lambda", "-0.5"])
+        .assert()
+        .failure()
+        .stderr(str::contains("error: unexpected argument '-0' found"));
+}
+
+#[test]
+fn test_normal_distribution_wait_time() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let start = Instant::now();
+    cmd.args(&["--normal", "--normal-mean", "1s", "--normal-std-dev", "0.1"])
+        .assert()
+        .success();
+    let elapsed = start.elapsed();
+    // Assert that the elapsed time is greater than 0 and within a reasonable range (e.g., 0.5s to 2s)
+    assert!(elapsed > Duration::from_millis(0));
+    assert!(elapsed < Duration::from_secs(2));
+}
+
+#[test]
+fn test_exponential_distribution_wait_time() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let start = Instant::now();
+    cmd.args(&["--exponential", "--exponential-lambda", "1.0"])
+        .assert()
+        .success();
+    let elapsed = start.elapsed();
+    // Exponential distribution with lambda=1.0 has a mean of 1.0. Allow a broad range.
+    assert!(elapsed > Duration::from_millis(0));
+    assert!(elapsed < Duration::from_secs(5));
+}
+
+#[test]
+fn test_log_normal_distribution_wait_time() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let start = Instant::now();
+    cmd.args(&["--log-normal", "--log-normal-mean", "1s", "--log-normal-std-dev", "0.5"])
+        .assert()
+        .success();
+    let elapsed = start.elapsed();
+    // Log-Normal distribution with mean=1s, std_dev=0.5. Allow a broad range.
+    assert!(elapsed > Duration::from_millis(0));
+    assert!(elapsed < Duration::from_secs(5));
+}
+
+#[test]
+fn test_pareto_distribution_wait_time() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let start = Instant::now();
+    cmd.args(&["--pareto", "--pareto-scale", "1.0", "--pareto-shape", "2.0"])
+        .assert()
+        .success();
+    let elapsed = start.elapsed();
+    // Pareto distribution with scale=1.0, shape=2.0. Allow a broad range.
+    assert!(elapsed > Duration::from_millis(0));
+    assert!(elapsed < Duration::from_secs(5));
+}
+
+#[test]
+fn test_weibull_distribution_wait_time() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let start = Instant::now();
+    cmd.args(&["--weibull", "--weibull-shape", "1.0", "--weibull-scale", "1.0"])
+        .assert()
+        .success();
+    let elapsed = start.elapsed();
+    // Weibull distribution with shape=1.0, scale=1.0. Allow a broad range.
+    assert!(elapsed > Duration::from_millis(0));
+    assert!(elapsed < Duration::from_secs(5));
 }

@@ -1,6 +1,8 @@
 use crate::{adaptive_verbose_wait, verbose_wait};
 use anyhow::Result;
 use rand::Rng;
+use rand::rngs::ThreadRng;
+use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull};
 use chrono::{Local, DateTime};
 
 use std::time::{Duration, SystemTime};
@@ -33,6 +35,7 @@ impl<T: Rng> JitterGenerator for RandomJitterGenerator<T> {
 }
 
 pub trait WaitCondition {
+    fn calculate_wait_duration(&self) -> Result<Duration>;
     fn wait(&self) -> Result<()>;
 }
 
@@ -51,13 +54,259 @@ impl DurationWait {
     }
 }
 
+pub struct NormalWait {
+    pub mean: Duration,
+    pub std_dev: f64,
+    pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
+}
+
+impl WaitCondition for NormalWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let mean_secs = self.mean.as_secs_f64();
+        let normal = Normal::new(mean_secs, self.std_dev)?;
+        let mut rng = ThreadRng::default();
+        let duration_secs = normal.sample(&mut rng).max(0.0);
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
+        Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct ExponentialWait {
+    pub lambda: f64,
+    pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
+}
+
+impl WaitCondition for ExponentialWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let exponential = Exp::new(self.lambda)?;
+        let mut rng = ThreadRng::default();
+        let duration_secs = exponential.sample(&mut rng).max(0.0);
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
+        Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct LogNormalWait {
+    pub mean: Duration,
+    pub std_dev: f64,
+    pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
+}
+
+impl WaitCondition for LogNormalWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let mean_secs = self.mean.as_secs_f64();
+        let log_normal = LogNormal::new(mean_secs, self.std_dev)?;
+        let mut rng = ThreadRng::default();
+        let duration_secs = log_normal.sample(&mut rng).max(0.0);
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
+        Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct ParetoWait {
+    pub scale: f64,
+    pub shape: f64,
+    pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
+}
+
+impl WaitCondition for ParetoWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let pareto = Pareto::new(self.scale, self.shape)?;
+        let mut rng = ThreadRng::default();
+        let duration_secs = pareto.sample(&mut rng).max(0.0);
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
+        Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct WeibullWait {
+    pub shape: f64,
+    pub scale: f64,
+    pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
+}
+
+impl WaitCondition for WeibullWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let weibull = Weibull::new(self.shape, self.scale)?;
+        let mut rng = ThreadRng::default();
+        let duration_secs = weibull.sample(&mut rng).max(0.0);
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
+        Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct TimeAlignWait {
     pub align_interval: Duration,
     pub verbose: Option<Duration>,
 }
 
 impl WaitCondition for TimeAlignWait {
-    fn wait(&self) -> Result<()> {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
         let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
         let sleep_duration = if self.align_interval.as_secs() == 0 {
             Duration::ZERO
@@ -69,6 +318,11 @@ impl WaitCondition for TimeAlignWait {
                 self.align_interval - Duration::from_secs(remainder)
             }
         };
+        Ok(sleep_duration)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
 
         match self.verbose {
             Some(display_interval) => {
@@ -112,7 +366,13 @@ pub struct UntilTimeWait {
 }
 
 impl WaitCondition for UntilTimeWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        Ok(self.sleep_duration)
+    }
+
     fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+
         match self.verbose {
             Some(display_interval) => {
                 let display_fn = |remaining: Duration| {
@@ -124,7 +384,7 @@ impl WaitCondition for UntilTimeWait {
                         eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
                     }
                 };
-                verbose_wait(self.sleep_duration, display_interval, display_fn);
+                verbose_wait(sleep_duration, display_interval, display_fn);
             }
             None => {
                 let display_fn = |remaining: Duration| {
@@ -136,7 +396,7 @@ impl WaitCondition for UntilTimeWait {
                         eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
                     }
                 };
-                adaptive_verbose_wait(self.sleep_duration, display_fn);
+                adaptive_verbose_wait(sleep_duration, display_fn);
             }
         }
         Ok(())
@@ -144,11 +404,21 @@ impl WaitCondition for UntilTimeWait {
 }
 
 impl WaitCondition for ProbabilisticWait {
-    fn wait(&self) -> Result<()> {
-        let mut rng = rand::rng();
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let mut rng = ThreadRng::default();
         let roll: f64 = rng.random_range(0.0..1.0);
 
         if roll <= self.probability {
+            Ok(self.duration)
+        } else {
+            Ok(Duration::ZERO)
+        }
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+
+        if sleep_duration > Duration::ZERO {
             match self.verbose {
                 Some(display_interval) => {
                     let display_fn = |remaining: Duration| {
@@ -178,7 +448,7 @@ impl WaitCondition for ProbabilisticWait {
         } else if self.verbose.is_some() || self.verbose.is_none() {
             eprintln!(
                 "Probabilistic wait: Skipping sleep (probability: {}, roll: {})",
-                self.probability, roll
+                self.probability, self.calculate_wait_duration().unwrap().as_secs_f64() // This is a bit of a hack, but it works for now
             );
         }
         Ok(())
@@ -186,10 +456,14 @@ impl WaitCondition for ProbabilisticWait {
 }
 
 impl WaitCondition for DurationWait {
-    fn wait(&self) -> Result<()> {
-        let mut rng = rand::rng();
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let mut rng = ThreadRng::default();
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
-        let sleep_duration = self.calculate_sleep_duration(&mut jitter_gen);
+        Ok(self.calculate_sleep_duration(&mut jitter_gen))
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
 
         match self.verbose {
             Some(display_interval) => {
@@ -344,7 +618,7 @@ mod tests {
     }
     #[test]
     fn test_jitter_generator_non_zero_max_jitter() {
-        let mut rng = rand::rng();
+        let mut rng = ThreadRng::default();
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
         let max_jitter = Duration::from_millis(100);
         let generated_jitter = jitter_gen.generate(max_jitter);
@@ -353,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_jitter_generator_zero_max_jitter() {
-        let mut rng = rand::rng();
+        let mut rng = ThreadRng::default();
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
         let max_jitter = Duration::ZERO;
         let generated_jitter = jitter_gen.generate(max_jitter);

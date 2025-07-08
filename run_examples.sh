@@ -119,4 +119,20 @@ cat "$LOG_FILE"
 rm "$LOG_FILE"
 echo ""
 
+echo "## Statistical Distribution Waits"
+echo "### Normal Distribution (mean 1s, std dev 100ms)"
+run_dozr_example "--normal-mean 1s --normal-std-dev 100ms"
+
+echo "### Exponential Distribution (lambda 0.5)"
+run_dozr_example "--exponential-lambda 0.5"
+
+echo "### Log-Normal Distribution (mean 1s, std dev 100ms)"
+run_dozr_example "--log-normal-mean 1s --log-normal-std-dev 100ms"
+
+echo "### Pareto Distribution (scale 1s, shape 1.5)"
+run_dozr_example "--pareto-scale 1s --pareto-shape 1.5"
+
+echo "### Weibull Distribution (shape 1.5, scale 1s)"
+run_dozr_example "--weibull-shape 1.5 --weibull-scale 1s"
+
 echo "--- dozr Examples Complete ---"

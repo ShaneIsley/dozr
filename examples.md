@@ -128,3 +128,45 @@ Redirect `dozr`'s verbose output to a log file:
 dozr --duration 1m --jitter 5s -v 2> dozr_progress.log
 cat dozr_progress.log
 ```
+
+## Statistical Distribution Waits
+
+### Normal Distribution
+
+Wait for a duration sampled from a Normal distribution with a mean of 1 second and a standard deviation of 100 milliseconds:
+
+```bash
+dozr --normal-mean 1s --normal-std-dev 100ms
+```
+
+### Exponential Distribution
+
+Wait for a duration sampled from an Exponential distribution with a lambda (rate parameter) of 0.5:
+
+```bash
+dozr --exponential-lambda 0.5
+```
+
+### Log-Normal Distribution
+
+Wait for a duration sampled from a Log-Normal distribution with a mean of 1 second and a standard deviation of 100 milliseconds:
+
+```bash
+dozr --log-normal-mean 1s --log-normal-std-dev 100ms
+```
+
+### Pareto Distribution
+
+Wait for a duration sampled from a Pareto distribution with a scale of 1 second and a shape of 1.5:
+
+```bash
+dozr --pareto-scale 1s --pareto-shape 1.5
+```
+
+### Weibull Distribution
+
+Wait for a duration sampled from a Weibull distribution with a shape of 1.5 and a scale of 1 second:
+
+```bash
+dozr --weibull-shape 1.5 --weibull-scale 1s
+```
