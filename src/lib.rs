@@ -140,8 +140,11 @@ where
         let eta = remaining.as_secs_f64();
         let rounded_eta = eta.round() as u64;
 
+        eprintln!("[DEBUG] Elapsed: {:?}, Remaining: {:?}, Rounded ETA: {}", elapsed, remaining, rounded_eta);
+
         if remaining == Duration::ZERO {
             display_fn(Duration::ZERO);
+            eprintln!("[DEBUG] Remaining is ZERO, breaking loop.");
             break;
         }
 
@@ -149,22 +152,22 @@ where
         if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
             display_fn(Duration::from_secs(rounded_eta));
             last_displayed_eta = Some(rounded_eta);
+            eprintln!("[DEBUG] Displayed ETA: {}", rounded_eta);
         }
 
         let current_update_period = get_adaptive_update_period(remaining);
+        eprintln!("[DEBUG] Current Update Period: {:?}", current_update_period);
 
         let remaining_secs = remaining.as_secs();
 
         let time_to_next_marker = if current_update_period.as_secs() == 0 {
             remaining
         } else {
-            let remainder = remaining_secs % current_update_period.as_secs();
-            if remainder == 0 {
-                current_update_period
-            } else {
-                Duration::from_secs(current_update_period.as_secs() - remainder)
-            }
+            let target_marker_secs = (remaining_secs / current_update_period.as_secs()) * current_update_period.as_secs();
+            remaining.saturating_sub(Duration::from_secs(target_marker_secs))
         };
+        eprintln!("[DEBUG] Time to Next Marker: {:?}", time_to_next_marker);
+
 
         let time_to_next_threshold = if remaining_secs > 600 {
             remaining.saturating_sub(Duration::from_secs(600))
@@ -177,9 +180,11 @@ where
         } else {
             remaining
         };
+        eprintln!("[DEBUG] Time to Next Threshold: {:?}", time_to_next_threshold);
 
         let sleep_duration = std::cmp::min(current_update_period, std::cmp::min(time_to_next_threshold, time_to_next_marker));
         let sleep_duration = sleep_duration.max(Duration::from_millis(1)); // Ensure at least 1ms sleep to avoid busy-waiting
+        eprintln!("[DEBUG] Calculated Sleep Duration: {:?}", sleep_duration);
 
         if sleep_duration > Duration::ZERO {
             thread::sleep(sleep_duration);
@@ -187,8 +192,10 @@ where
             // If sleep_duration is zero or negative, but there's still time remaining,
             // yield to ensure other threads can run and prevent busy-waiting.
             thread::yield_now();
+            eprintln!("[DEBUG] Yielding due to zero/negative sleep_duration but remaining time.");
         } else {
             // If no time remaining, break the loop
+            eprintln!("[DEBUG] No time remaining, breaking loop.");
             break;
         }
     }
