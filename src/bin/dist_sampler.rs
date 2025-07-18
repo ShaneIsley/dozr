@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use rand::rngs::ThreadRng;
-use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull};
+use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Uniform};
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -34,6 +34,14 @@ pub struct Cli {
     /// Shape parameter for Pareto and Weibull distributions (e.g., "1.5").
     #[arg(long)]
     pub shape: Option<f64>,
+
+    /// Minimum value for Uniform distribution (e.g., "1s").
+    #[arg(long, value_parser = humantime::parse_duration)]
+    pub min: Option<Duration>,
+
+    /// Maximum value for Uniform distribution (e.g., "5s").
+    #[arg(long, value_parser = humantime::parse_duration)]
+    pub max: Option<Duration>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -65,6 +73,11 @@ fn main() -> anyhow::Result<()> {
                 let shape = args.shape.expect("Shape is required for weibull distribution");
                 let scale = args.scale.expect("Scale is required for weibull distribution");
                 Weibull::new(shape, scale)?.sample(&mut rng)
+            }
+            "uniform" => {
+                let min_secs = args.min.expect("Min is required for uniform distribution").as_secs_f64();
+                let max_secs = args.max.expect("Max is required for uniform distribution").as_secs_f64();
+                Uniform::new(min_secs, max_secs)?.sample(&mut rng)
             }
             _ => panic!("Unsupported distribution type"),
         };

@@ -170,3 +170,11 @@ Wait for a duration sampled from a Weibull distribution with a shape of 1.5 and 
 ```bash
 dozr --weibull-shape 1.5 --weibull-scale 1s
 ```
+
+### Uniform Distribution
+
+Wait for a duration sampled from a Uniform distribution between 1 second and 5 seconds:
+
+```bash
+dozr --uniform-min 1s --uniform-max 5s
+```

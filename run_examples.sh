@@ -135,4 +135,7 @@ run_dozr_example "--pareto-scale 1s --pareto-shape 1.5"
 echo "### Weibull Distribution (shape 1.5, scale 1s)"
 run_dozr_example "--weibull-shape 1.5 --weibull-scale 1s"
 
+echo "### Uniform Distribution (min 1s, max 5s)"
+run_dozr_example "--uniform-min 1s --uniform-max 5s"
+
 echo "--- dozr Examples Complete ---"
