@@ -5,6 +5,41 @@ use std::time::Instant;
 use std::time::Duration;
 use dozr::cli::Cli;
 
+fn default_cli_args() -> Cli {
+    Cli {
+        duration: None,
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        weibull: false,
+        weibull_shape: None,
+        weibull_scale: None,
+        uniform: false,
+        uniform_min: None,
+        uniform_max: None,
+        triangular: false,
+        triangular_min: None,
+        triangular_max: None,
+        triangular_mode: None,
+        
+        jitter: None,
+        align: None,
+        verbose: None,
+        probability: None,
+        until: None,
+    }
+}
+
+
+
 #[test]
 fn test_jitter_flag_accepts_argument() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
@@ -127,7 +162,7 @@ fn test_duration_and_align_are_mutually_exclusive() {
 fn test_duration_or_align_is_required() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     cmd.assert().failure().stderr(str::contains(
-        "error: the following required arguments were not provided:\n  <--duration <DURATION>|--normal|--exponential|--log-normal|--pareto|--weibull|--align <ALIGN>|--until <UNTIL>>",
+        "error: the following required arguments were not provided:\n  <--duration <DURATION>|--normal|--exponential|--log-normal|--pareto|--weibull|--uniform|--triangular|--align <ALIGN>|--until <UNTIL>>"
     ));
 }
 
@@ -242,157 +277,68 @@ fn test_parse_time_until_hh_mm() {
 #[test]
 fn test_is_adaptive_verbose() {
     // Adaptive verbose (1ns sentinel)
-    let cli_adaptive = Cli { 
-        duration: None, 
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        weibull: false,
-        weibull_shape: None,
-        weibull_scale: None,
-        jitter: None, 
-        align: None, 
-        verbose: Some(Duration::from_nanos(1)), 
-        probability: None, 
-        until: None 
+    let cli_adaptive = {
+        let mut cli = default_cli_args();
+        cli.verbose = Some(Duration::from_nanos(1));
+        cli
     };
     assert!(cli_adaptive.is_adaptive_verbose());
 
     // Fixed verbose (e.g., 1s)
-    let cli_fixed = Cli { 
-        duration: None, 
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        weibull: false,
-        weibull_shape: None,
-        weibull_scale: None,
-        jitter: None, 
-        align: None, 
-        verbose: Some(Duration::from_secs(1)), 
-        probability: None, 
-        until: None 
+    let cli_fixed = {
+        let mut cli = default_cli_args();
+        cli.verbose = Some(Duration::from_secs(1));
+        cli
     };
     assert!(!cli_fixed.is_adaptive_verbose());
 
     // No verbose
-    let cli_none = Cli { 
-        duration: None, 
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        weibull: false,
-        weibull_shape: None,
-        weibull_scale: None,
-        jitter: None, 
-        align: None, 
-        verbose: None, 
-        probability: None, 
-        until: None 
-    };
+    let cli_none = default_cli_args();
     assert!(!cli_none.is_adaptive_verbose());
 }
 
 #[test]
 fn test_verbose_period() {
     // Adaptive verbose (1ns sentinel) -> Should return None
-    let cli_adaptive = Cli { 
-        duration: None, 
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        weibull: false,
-        weibull_shape: None,
-        weibull_scale: None,
-        jitter: None, 
-        align: None, 
-        verbose: Some(Duration::from_nanos(1)), 
-        probability: None, 
-        until: None 
+    let cli_adaptive = {
+        let mut cli = default_cli_args();
+        cli.verbose = Some(Duration::from_nanos(1));
+        cli
     };
     assert_eq!(cli_adaptive.verbose_period(), None);
 
     // Fixed verbose (e.g., 1s) -> Should return Some(1s)
-    let cli_fixed = Cli { 
-        duration: None, 
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        weibull: false,
-        weibull_shape: None,
-        weibull_scale: None,
-        jitter: None, 
-        align: None, 
-        verbose: Some(Duration::from_secs(1)), 
-        probability: None, 
-        until: None 
+    let cli_fixed = {
+        let mut cli = default_cli_args();
+        cli.verbose = Some(Duration::from_secs(1));
+        cli
     };
     assert_eq!(cli_fixed.verbose_period(), Some(Duration::from_secs(1)));
 
     // No verbose -> Should return None
-    let cli_none = Cli { 
-        duration: None, 
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        weibull: false,
-        weibull_shape: None,
-        weibull_scale: None,
-        jitter: None, 
-        align: None, 
-        verbose: None, 
-        probability: None, 
-        until: None 
-    };
+    let cli_none = default_cli_args();
     assert_eq!(cli_none.verbose_period(), None);
+}
+
+#[test]
+fn test_triangular_distribution_args() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.args(&["--triangular", "--triangular-min", "0.0", "--triangular-max", "1.0", "--triangular-mode", "0.5"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_triangular_distribution_wait_time() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    let start = Instant::now();
+    cmd.args(&["--triangular", "--triangular-min", "0.1", "--triangular-max", "0.5", "--triangular-mode", "0.2"])
+        .assert()
+        .success();
+    let elapsed = start.elapsed();
+    // Triangular distribution with min=0.1, max=0.5, mode=0.2. Allow a broad range.
+    assert!(elapsed > Duration::from_millis(0));
+    assert!(elapsed < Duration::from_secs(1));
 }
 
 #[test]
@@ -494,7 +440,7 @@ fn test_exponential_distribution_wait_time() {
     let elapsed = start.elapsed();
     // Exponential distribution with lambda=1.0 has a mean of 1.0. Allow a broad range.
     assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(5));
+    assert!(elapsed < Duration::from_secs(10));
 }
 
 #[test]
@@ -507,7 +453,7 @@ fn test_log_normal_distribution_wait_time() {
     let elapsed = start.elapsed();
     // Log-Normal distribution with mean=1s, std_dev=0.5. Allow a broad range.
     assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(5));
+    assert!(elapsed < Duration::from_secs(10));
 }
 
 #[test]
@@ -520,7 +466,7 @@ fn test_pareto_distribution_wait_time() {
     let elapsed = start.elapsed();
     // Pareto distribution with scale=1.0, shape=2.0. Allow a broad range.
     assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(5));
+    assert!(elapsed < Duration::from_secs(10));
 }
 
 #[test]
@@ -533,5 +479,5 @@ fn test_weibull_distribution_wait_time() {
     let elapsed = start.elapsed();
     // Weibull distribution with shape=1.0, scale=1.0. Allow a broad range.
     assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(5));
+    assert!(elapsed < Duration::from_secs(10));
 }

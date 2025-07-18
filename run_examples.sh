@@ -138,4 +138,9 @@ run_dozr_example "--weibull-shape 1.5 --weibull-scale 1s"
 echo "### Uniform Distribution (min 1s, max 5s)"
 run_dozr_example "--uniform-min 1s --uniform-max 5s"
 
+echo "### Triangular Distribution (min 0.0, max 1.0, mode 0.5)"
+run_dozr_example "--triangular-min 0.0 --triangular-max 1.0 --triangular-mode 0.5"
+
+
+
 echo "--- dozr Examples Complete ---"

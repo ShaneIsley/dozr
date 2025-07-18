@@ -35,6 +35,8 @@ fn parse_time_until(s: &str) -> Result<Duration, String> {
     "log_normal",
     "pareto",
     "weibull",
+    "uniform",
+    "triangular",
     "align",
     "until",
 ]))]
@@ -99,6 +101,34 @@ pub struct Cli {
     #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("weibull", "true"))]
     pub weibull_scale: Option<f64>,
 
+    /// Use a Uniform distribution for the wait duration.
+    #[arg(long, group = "wait_type")]
+    pub uniform: bool,
+
+    /// Minimum value for the Uniform distribution (e.g., "1s").
+    #[arg(long, value_parser = humantime::parse_duration, required_if_eq("uniform", "true"))]
+    pub uniform_min: Option<Duration>,
+
+    /// Maximum value for the Uniform distribution (e.g., "5s").
+    #[arg(long, value_parser = humantime::parse_duration, required_if_eq("uniform", "true"))]
+    pub uniform_max: Option<Duration>,
+
+    /// Use a Triangular distribution for the wait duration.
+    #[arg(long, group = "wait_type")]
+    pub triangular: bool,
+
+    /// Minimum value for the Triangular distribution (e.g., "0.0").
+    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("triangular", "true"))]
+    pub triangular_min: Option<f64>,
+
+    /// Maximum value for the Triangular distribution (e.g., "1.0").
+    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("triangular", "true"))]
+    pub triangular_max: Option<f64>,
+
+    /// Mode (most likely value) for the Triangular distribution (e.g., "0.5").
+    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("triangular", "true"))]
+    pub triangular_mode: Option<f64>,
+
     /// Add a random duration of jitter (e.g., "100ms").
     #[arg(short, long, value_parser = humantime::parse_duration)]
     pub jitter: Option<Duration>,
@@ -128,6 +158,8 @@ pub enum WaitType {
     LogNormal { mean: Duration, std_dev: f64 },
     Pareto { scale: f64, shape: f64 },
     Weibull { shape: f64, scale: f64 },
+    Uniform { min: Duration, max: Duration },
+    Triangular { min: f64, max: f64, mode: f64 },
     Align(Duration),
     Until(Duration),
 }
@@ -164,6 +196,19 @@ impl Cli {
             WaitType::Weibull {
                 shape: self.weibull_shape.unwrap(),
                 scale: self.weibull_scale.unwrap(),
+            }
+        } else if self.uniform {
+            // These unwraps are safe because of requires_all in clap
+            WaitType::Uniform {
+                min: self.uniform_min.unwrap(),
+                max: self.uniform_max.unwrap(),
+            }
+        } else if self.triangular {
+            // These unwraps are safe because of requires_all in clap
+            WaitType::Triangular {
+                min: self.triangular_min.unwrap(),
+                max: self.triangular_max.unwrap(),
+                mode: self.triangular_mode.unwrap(),
             }
         } else if let Some(align) = self.align {
             WaitType::Align(align)

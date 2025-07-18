@@ -53,14 +53,28 @@ pub fn run() -> Result<()> {
             verbose: args.verbose_period(),
             jitter: args.jitter,
         }),
+        cli::WaitType::Triangular { min, max, mode } => Box::new(conditions::TriangularWait {
+            min,
+            max,
+            mode,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
         cli::WaitType::Align(align_interval) => Box::new(conditions::TimeAlignWait {
             align_interval,
             verbose: args.verbose_period(),
+        }),
+        cli::WaitType::Uniform { min, max } => Box::new(conditions::UniformWait {
+            min,
+            max,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
         }),
         cli::WaitType::Until(sleep_duration) => Box::new(conditions::UntilTimeWait {
             sleep_duration,
             verbose: args.verbose_period(),
         }),
+        
     };
 
     condition.wait()

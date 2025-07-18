@@ -178,3 +178,13 @@ Wait for a duration sampled from a Uniform distribution between 1 second and 5 s
 ```bash
 dozr --uniform-min 1s --uniform-max 5s
 ```
+
+### Triangular Distribution
+
+Wait for a duration sampled from a Triangular distribution with a minimum of 0.0, a maximum of 1.0, and a mode of 0.5:
+
+```bash
+dozr --triangular-min 0.0 --triangular-max 1.0 --triangular-mode 0.5
+```
+
+

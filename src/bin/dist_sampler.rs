@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use rand::rngs::ThreadRng;
-use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Uniform};
+use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Uniform, Triangular};
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -42,6 +42,20 @@ pub struct Cli {
     /// Maximum value for Uniform distribution (e.g., "5s").
     #[arg(long, value_parser = humantime::parse_duration)]
     pub max: Option<Duration>,
+
+    /// Minimum value for Triangular distribution (e.g., "0.0").
+    #[arg(long)]
+    pub triangular_min: Option<f64>,
+
+    /// Maximum value for Triangular distribution (e.g., "1.0").
+    #[arg(long)]
+    pub triangular_max: Option<f64>,
+
+    /// Mode value for Triangular distribution (e.g., "0.5").
+    #[arg(long)]
+    pub triangular_mode: Option<f64>,
+
+    
 }
 
 fn main() -> anyhow::Result<()> {
@@ -78,6 +92,12 @@ fn main() -> anyhow::Result<()> {
                 let min_secs = args.min.expect("Min is required for uniform distribution").as_secs_f64();
                 let max_secs = args.max.expect("Max is required for uniform distribution").as_secs_f64();
                 Uniform::new(min_secs, max_secs)?.sample(&mut rng)
+            }
+            "triangular" => {
+                let min = args.triangular_min.expect("Min is required for triangular distribution");
+                let max = args.triangular_max.expect("Max is required for triangular distribution");
+                let mode = args.triangular_mode.expect("Mode is required for triangular distribution");
+                Triangular::new(min, max, mode)?.sample(&mut rng)
             }
             _ => panic!("Unsupported distribution type"),
         };
