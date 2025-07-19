@@ -3,6 +3,7 @@
 # This script demonstrates various usage examples of the dozr command-line utility.
 
 # Ensure dozr is built
+
 echo "Building dozr..."
 cargo build --release
 if [ $? -ne 0 ]; then
@@ -17,8 +18,23 @@ echo ""
 run_dozr_example() {
     local cmd="$@"
     echo "$(date +'%H:%M:%S') - START: dozr $cmd"
+    local start_time=$(date +%s%N)
     $DOZR_BIN $cmd
-    echo "$(date +'%H:%M:%S') - END: dozr $cmd"
+    local end_time=$(date +%s%N)
+    local elapsed_ms=$((($end_time - $start_time) / 1000000))
+    echo "$(date +'%H:%M:%S') - END: dozr $cmd (Elapsed: ${elapsed_ms}ms)"
+    echo ""
+}
+
+run_dozr_example_and_kill() {
+    local cmd="$@"
+    local kill_after_seconds=5 # Kill after 5 seconds
+    echo "$(date +'%H:%M:%S') - START: dozr $cmd (Will kill after ${kill_after_seconds}s)"
+    $DOZR_BIN $cmd &
+    local pid=$!
+    sleep $kill_after_seconds
+    kill $pid 2>/dev/null # Kill the process, suppress error if already exited
+    echo "$(date +'%H:%M:%S') - END: dozr $cmd (Killed after ${kill_after_seconds}s)"
     echo ""
 }
 
@@ -35,10 +51,10 @@ run_dozr_example "--duration 1s --jitter 500ms"
 
 echo "## Verbose Output"
 echo "### Wait for 3 seconds with adaptive verbose output"
-run_dozr_example "--duration 3s --verbose"
+run_dozr_example "--duration 1s --verbose"
 
 echo "### Combine verbose output with jitter (20s base, 10s jitter)"
-run_dozr_example "--duration 20s --jitter 10s -v"
+run_dozr_example "--duration 1s --jitter 100ms -v"
 
 echo "### Specify a custom update period for verbose messages (1s wait, 250ms update)"
 run_dozr_example "--duration 1s --verbose 250ms"
@@ -47,16 +63,16 @@ echo "### Set verbose messages to update every 1 second (2s wait)"
 run_dozr_example "--duration 2s --verbose 1s"
 
 echo "### Wait for 25 seconds with adaptive verbose output (should show 5s updates)"
-run_dozr_example "--duration 25s --verbose"
+run_dozr_example "--duration 1s --verbose"
 
 echo "### Wait for 75 seconds with adaptive verbose output (should show 10s updates)"
-run_dozr_example "--duration 75s --verbose"
+run_dozr_example "--duration 1s --verbose"
 
 echo "### Wait for 350 seconds (5m 50s) with adaptive verbose output (should show 15s updates)"
-run_dozr_example "--duration 350s --verbose"
+run_dozr_example "--duration 1s --verbose"
 
 echo "### Wait for 700 seconds (11m 40s) with adaptive verbose output (should show 1m updates)"
-run_dozr_example "--duration 700s --verbose"
+run_dozr_example "--duration 1s --verbose"
 
 echo "## Time Alignment"
 echo "### Wait until the next even 5-second mark"
@@ -75,11 +91,16 @@ TARGET_TIME=$(date -v+10S +"%H:%M:%S")
 echo "Current time: $CURRENT_TIME, Target time: $TARGET_TIME"
 run_dozr_example "--until $TARGET_TIME"
 
-echo "### Wait until 5 seconds from now with verbose output (HH:MM format)"
+echo "### Wait until the next minute with verbose output (HH:MM format)"
 CURRENT_TIME=$(date +"%H:%M")
-TARGET_TIME=$(date -v+5S +"%H:%M")
+TARGET_TIME=$(date -v+1M +"%H:%M") # Target the next minute
 echo "Current time: $CURRENT_TIME, Target time: $TARGET_TIME"
 run_dozr_example "--until $TARGET_TIME --verbose"
+
+echo "### Demonstrate --until rollover and early exit (HH:MM format)"
+TARGET_TIME="01:00" # A time that has likely passed today
+echo "Target time: $TARGET_TIME (will roll over to next day)"
+run_dozr_example_and_kill "--until $TARGET_TIME --verbose"
 
 echo "## Probabilistic Delay"
 echo "### Wait for 1 second with a 50% chance"
@@ -121,25 +142,25 @@ echo ""
 
 echo "## Statistical Distribution Waits"
 echo "### Normal Distribution (mean 1s, std dev 100ms)"
-run_dozr_example "--normal-mean 1s --normal-std-dev 100ms"
+run_dozr_example "--normal --normal-mean 200ms --normal-std-dev 0.05"
 
 echo "### Exponential Distribution (lambda 0.5)"
-run_dozr_example "--exponential-lambda 0.5"
+run_dozr_example "--exponential --exponential-lambda 5.0"
 
 echo "### Log-Normal Distribution (mean 1s, std dev 100ms)"
-run_dozr_example "--log-normal-mean 1s --log-normal-std-dev 100ms"
+run_dozr_example "--log-normal --log-normal-mean 200ms --log-normal-std-dev 0.05"
 
 echo "### Pareto Distribution (scale 1s, shape 1.5)"
-run_dozr_example "--pareto-scale 1s --pareto-shape 1.5"
+run_dozr_example "--pareto --pareto-scale 0.2 --pareto-shape 2.0"
 
 echo "### Weibull Distribution (shape 1.5, scale 1s)"
-run_dozr_example "--weibull-shape 1.5 --weibull-scale 1s"
+run_dozr_example "--weibull --weibull-shape 1.0 --weibull-scale 0.3"
 
 echo "### Uniform Distribution (min 1s, max 5s)"
-run_dozr_example "--uniform-min 1s --uniform-max 5s"
+run_dozr_example "--uniform --uniform-min 10ms --uniform-max 100ms"
 
 echo "### Triangular Distribution (min 0.0, max 1.0, mode 0.5)"
-run_dozr_example "--triangular-min 0.0 --triangular-max 1.0 --triangular-mode 0.5"
+run_dozr_example "--triangular --triangular-min 0.0 --triangular-max 0.1 --triangular-mode 0.05"
 
 
 
