@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use rand::rngs::ThreadRng;
-use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Uniform, Triangular};
+use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Uniform, Triangular, Gamma};
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -55,6 +55,14 @@ pub struct Cli {
     #[arg(long)]
     pub triangular_mode: Option<f64>,
 
+    /// Shape parameter for Gamma distribution (e.g., "2.0").
+    #[arg(long)]
+    pub gamma_shape: Option<f64>,
+
+    /// Scale parameter for Gamma distribution (e.g., "1.0").
+    #[arg(long)]
+    pub gamma_scale: Option<f64>,
+
     
 }
 
@@ -98,6 +106,16 @@ fn main() -> anyhow::Result<()> {
                 let max = args.triangular_max.expect("Max is required for triangular distribution");
                 let mode = args.triangular_mode.expect("Mode is required for triangular distribution");
                 Triangular::new(min, max, mode)?.sample(&mut rng)
+            }
+            "gamma" => {
+                let shape = args.gamma_shape.expect("Shape is required for gamma distribution");
+                let scale = args.gamma_scale.expect("Scale is required for gamma distribution");
+                Gamma::new(shape, scale)?.sample(&mut rng)
+            }
+            "gamma" => {
+                let shape = args.gamma_shape.expect("Shape is required for gamma distribution");
+                let scale = args.gamma_scale.expect("Scale is required for gamma distribution");
+                Gamma::new(shape, scale)?.sample(&mut rng)
             }
             _ => panic!("Unsupported distribution type"),
         };

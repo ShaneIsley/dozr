@@ -37,6 +37,7 @@ fn parse_time_until(s: &str) -> Result<Duration, String> {
     "weibull",
     "uniform",
     "triangular",
+    "gamma",
     "align",
     "until",
 ]))]
@@ -129,6 +130,18 @@ pub struct Cli {
     #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("triangular", "true"))]
     pub triangular_mode: Option<f64>,
 
+    /// Use a Gamma distribution for the wait duration.
+    #[arg(long, group = "wait_type")]
+    pub gamma: bool,
+
+    /// Shape parameter of the Gamma distribution (e.g., "2.0").
+    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("gamma", "true"))]
+    pub gamma_shape: Option<f64>,
+
+    /// Scale parameter of the Gamma distribution (e.g., "1.0").
+    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("gamma", "true"))]
+    pub gamma_scale: Option<f64>,
+
     /// Add a random duration of jitter (e.g., "100ms").
     #[arg(short, long, value_parser = humantime::parse_duration)]
     pub jitter: Option<Duration>,
@@ -160,6 +173,7 @@ pub enum WaitType {
     Weibull { shape: f64, scale: f64 },
     Uniform { min: Duration, max: Duration },
     Triangular { min: f64, max: f64, mode: f64 },
+    Gamma { shape: f64, scale: f64 },
     Align(Duration),
     Until(Duration),
 }
@@ -209,6 +223,11 @@ impl Cli {
                 min: self.triangular_min.unwrap(),
                 max: self.triangular_max.unwrap(),
                 mode: self.triangular_mode.unwrap(),
+            }
+        } else if self.gamma {
+            WaitType::Gamma {
+                shape: self.gamma_shape.unwrap(),
+                scale: self.gamma_scale.unwrap(),
             }
         } else if let Some(align) = self.align {
             WaitType::Align(align)

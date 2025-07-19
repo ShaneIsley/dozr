@@ -187,4 +187,12 @@ Wait for a duration sampled from a Triangular distribution with a minimum of 0.0
 dozr --triangular-min 0.0 --triangular-max 1.0 --triangular-mode 0.5
 ```
 
+### Gamma Distribution
+
+Wait for a duration sampled from a Gamma distribution with a shape of 2.0 and a scale of 1.0:
+
+```bash
+dozr --gamma-shape 2.0 --gamma-scale 1.0
+```
+
 

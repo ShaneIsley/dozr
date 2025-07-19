@@ -162,6 +162,9 @@ run_dozr_example "--uniform --uniform-min 10ms --uniform-max 100ms"
 echo "### Triangular Distribution (min 0.0, max 1.0, mode 0.5)"
 run_dozr_example "--triangular --triangular-min 0.0 --triangular-max 0.1 --triangular-mode 0.05"
 
+echo "### Gamma Distribution (shape 2.0, scale 1.0)"
+run_dozr_example "--gamma --gamma-shape 2.0 --gamma-scale 1.0"
+
 
 
 echo "--- dozr Examples Complete ---"

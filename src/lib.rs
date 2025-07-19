@@ -74,6 +74,12 @@ pub fn run() -> Result<()> {
             sleep_duration,
             verbose: args.verbose_period(),
         }),
+        cli::WaitType::Gamma { shape, scale } => Box::new(conditions::GammaWait {
+            shape,
+            scale,
+            verbose: args.verbose_period(),
+            jitter: args.jitter,
+        }),
         
     };
 

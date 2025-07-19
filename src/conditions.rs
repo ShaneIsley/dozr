@@ -2,7 +2,7 @@ use crate::{adaptive_verbose_wait, verbose_wait};
 use anyhow::Result;
 use rand::Rng;
 use rand::rngs::ThreadRng;
-use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Triangular, Uniform};
+use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Triangular, Uniform, Gamma};
 use chrono::{Local, DateTime};
 
 use std::time::{Duration, SystemTime};
@@ -364,6 +364,55 @@ impl WaitCondition for TriangularWait {
         let triangular = Triangular::new(self.min, self.max, self.mode)?;
         let mut rng = ThreadRng::default();
         let duration_secs = triangular.sample(&mut rng).max(0.0);
+        let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
+        let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
+        Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let sleep_duration = self.calculate_wait_duration()?;
+        match self.verbose {
+            Some(display_interval) => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                verbose_wait(sleep_duration, display_interval, display_fn);
+            }
+            None => {
+                let display_fn = |remaining: Duration| {
+                    if remaining.is_zero() {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                    } else {
+                        let now: DateTime<Local> = Local::now();
+                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                    }
+                };
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct GammaWait {
+    pub shape: f64,
+    pub scale: f64,
+    pub verbose: Option<Duration>,
+    pub jitter: Option<Duration>,
+}
+
+impl WaitCondition for GammaWait {
+    fn calculate_wait_duration(&self) -> Result<Duration> {
+        let gamma = Gamma::new(self.shape, self.scale)?;
+        let mut rng = ThreadRng::default();
+        let duration_secs = gamma.sample(&mut rng).max(0.0);
         let mut jitter_gen = RandomJitterGenerator::new(&mut rng);
         let random_jitter = jitter_gen.generate(self.jitter.unwrap_or(Duration::ZERO));
         Ok(Duration::from_secs_f64(duration_secs) + random_jitter)
