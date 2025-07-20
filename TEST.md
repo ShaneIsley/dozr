@@ -25,7 +25,7 @@ Unit tests are located in the same file as the code they are testing, inside a `
 Our unit tests cover the following areas:
 
 *   **`src/conditions.rs`**: The core logic for calculating wait durations for each distribution is thoroughly tested.
-*   **`src/cli.rs`**: The time parsing logic for the `--until` flag is tested in isolation.
+*   **`src/cli.rs`**: The time parsing logic for the `at` command is tested in isolation.
 *   **`src/lib.rs`**: The main application logic is tested using mock objects to ensure that the correct `WaitCondition` is created for each wait type.
 
 ## Integration Tests
@@ -38,7 +38,7 @@ Integration tests are located in the `tests` directory at the root of the projec
 
 Our integration tests cover the following areas:
 
-*   **`tests/cli.rs`**: The command-line interface is extensively tested to ensure that all arguments are parsed correctly, that error conditions are handled gracefully, and that the application produces the expected output.
+*   **`tests/cli.rs`**: The command-line interface is extensively tested to ensure that all subcommands and arguments are parsed correctly, that error conditions are handled gracefully, and that the application produces the expected output.
 
 ## Running the Tests
 

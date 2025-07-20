@@ -3,38 +3,14 @@ use predicates::prelude::{Predicate, PredicateBooleanExt};
 use predicates::str;
 use std::time::Instant;
 use std::time::Duration;
-use dozr::cli::Cli;
+use dozr::cli::{Cli, Commands};
 
 pub fn default_cli_args() -> Cli {
     Cli {
-        duration: None,
-        normal: false,
-        normal_mean: None,
-        normal_std_dev: None,
-        exponential: false,
-        exponential_lambda: None,
-        log_normal: false,
-        log_normal_mean: None,
-        log_normal_std_dev: None,
-        pareto: false,
-        pareto_scale: None,
-        pareto_shape: None,
-        
-        uniform: false,
-        uniform_min: None,
-        uniform_max: None,
-        triangular: false,
-        triangular_min: None,
-        triangular_max: None,
-        triangular_mode: None,
-        gamma: false,
-        gamma_shape: None,
-        gamma_scale: None,
+        command: Commands::Duration { time: Duration::from_secs(0) },
         jitter: None,
-        align: None,
         verbose: None,
         probability: None,
-        until: None,
     }
 }
 
@@ -43,7 +19,7 @@ pub fn default_cli_args() -> Cli {
 #[test]
 fn test_jitter_flag_accepts_argument() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "0s", "--jitter", "0s"])
+    cmd.args(&["d", "0s", "--jitter", "0s"])
         .assert()
         .success();
 }
@@ -54,7 +30,7 @@ fn test_jitter_adds_time() {
     let start = Instant::now();
     // We use a small base duration and a small jitter to keep the test fast.
     // The key is verifying that *some* extra time was added.
-    cmd.args(&["--duration", "100ms", "--jitter", "200ms"])
+    cmd.args(&["d", "100ms", "--jitter", "200ms"])
         .assert()
         .success();
     let duration = start.elapsed();
@@ -69,7 +45,7 @@ fn test_jitter_adds_time() {
 fn test_verbose_output_includes_eta() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     // Use a duration long enough to ensure multiple ETA updates
-    cmd.args(&["--duration", "2s", "--verbose"])
+    cmd.args(&["d", "2s", "-v"])
         .assert()
         .success()
         .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
@@ -80,7 +56,7 @@ fn test_verbose_custom_update_period() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     // Test with a 1.5s wait and 500ms update period.
     let assert = cmd
-        .args(&["--duration", "1s500ms", "--verbose", "500ms"])
+        .args(&["d", "1s500ms", "-v", "500ms"])
         .assert()
         .success();
     let output = assert.get_output();
@@ -95,7 +71,7 @@ fn test_verbose_adaptive_short_wait() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     // Test with a 1.5s wait (adaptive 500ms update).
     let assert = cmd
-        .args(&["--duration", "1s500ms", "--verbose"])
+        .args(&["d", "1s500ms", "-v"])
         .assert()
         .success();
     let output = assert.get_output();
@@ -110,7 +86,7 @@ fn test_verbose_adaptive_long_wait() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     // Test with a 5s wait (adaptive 1s update).
     let assert = cmd
-        .args(&["--duration", "5s", "--verbose"])
+        .args(&["d", "5s", "-v"])
         .assert()
         .success();
     let output = assert.get_output();
@@ -123,7 +99,7 @@ fn test_verbose_adaptive_long_wait() {
 #[test]
 fn test_invalid_duration_arg() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "invalid-duration"])
+    cmd.args(&["d", "invalid-duration"])
         .assert()
         .failure()
         .stderr(str::contains("error: invalid value"));
@@ -132,7 +108,7 @@ fn test_invalid_duration_arg() {
 #[test]
 fn test_invalid_jitter_arg() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--jitter", "invalid-jitter"])
+    cmd.args(&["d", "1s", "-j", "invalid-jitter"])
         .assert()
         .failure()
         .stderr(str::contains("error: invalid value"));
@@ -141,7 +117,7 @@ fn test_invalid_jitter_arg() {
 #[test]
 fn test_invalid_verbose_period_arg() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--verbose", "invalid-period"])
+    cmd.args(&["d", "1s", "-v", "invalid-period"])
         .assert()
         .failure()
         .stderr(str::contains("error: invalid value"));
@@ -150,33 +126,30 @@ fn test_invalid_verbose_period_arg() {
 #[test]
 fn test_duration_and_align_are_mutually_exclusive() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--align", "5s"])
+    cmd.args(&["d", "1s", "a", "5s"])
         .assert()
         .failure()
-        .stderr(str::contains(
-            "the argument '--duration <DURATION>' cannot be used with '--align <ALIGN>'",
-        ));
+        .stderr(str::contains("error: unexpected argument 'a' found"));
 }
 
 #[test]
 fn test_duration_or_align_is_required() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     cmd.assert().failure().stderr(str::contains(
-        "error: the following required arguments were not provided:
-  <--duration <DURATION>|--normal|--exponential|--log-normal|--pareto|--uniform|--triangular|--gamma|--align <ALIGN>|--until <UNTIL>>"
+        "Usage: dozr [OPTIONS] <COMMAND>"
     ));
 }
 
 #[test]
 fn test_duration_is_valid() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s"]).assert().success();
+    cmd.args(&["d", "1s"]).assert().success();
 }
 
 #[test]
 fn test_time_align_verbose_output() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--align", "5s", "--verbose"])
+    cmd.args(&["a", "5s", "-v"])
         .assert()
         .success()
         .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
@@ -185,7 +158,7 @@ fn test_time_align_verbose_output() {
 #[test]
 fn test_probabilistic_wait_verbose_output() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--probability", "1.0", "--verbose"])
+    cmd.args(&["d", "1s", "-p", "1.0", "-v"])
         .assert()
         .success()
         .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
@@ -194,7 +167,7 @@ fn test_probabilistic_wait_verbose_output() {
 #[test]
 fn test_probabilistic_wait_skip_verbose_output() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--probability", "0.0", "--verbose"])
+    cmd.args(&["d", "1s", "-p", "0.0", "-v"])
         .assert()
         .success()
         .stderr(str::contains("Probabilistic wait: Skipping sleep"));
@@ -203,7 +176,7 @@ fn test_probabilistic_wait_skip_verbose_output() {
 #[test]
 fn test_jitter_zero_duration() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--jitter", "0s"])
+    cmd.args(&["d", "1s", "-j", "0s"])
         .assert()
         .success();
 }
@@ -216,7 +189,7 @@ fn test_until_time_verbose_output() {
     let target_time = now + chrono::Duration::seconds(5);
     let target_time_str = target_time.format("%H:%M:%S").to_string();
 
-    cmd.args(&["--until", &target_time_str, "--verbose"])
+    cmd.args(&["at", &target_time_str, "-v"])
         .assert()
         .success()
         .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
@@ -225,7 +198,7 @@ fn test_until_time_verbose_output() {
 #[test]
 fn test_invalid_until_time_format() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--until", "invalid-time"])
+    cmd.args(&["at", "invalid-time"])
         .assert()
         .failure()
         .stderr(str::contains("Invalid time format"));
@@ -234,7 +207,7 @@ fn test_invalid_until_time_format() {
 #[test]
 fn test_invalid_until_time_hour() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--until", "25:00"])
+    cmd.args(&["at", "25:00"])
         .assert()
         .failure()
         .stderr(str::contains("Invalid time format"));
@@ -243,7 +216,7 @@ fn test_invalid_until_time_hour() {
 #[test]
 fn test_invalid_until_time_minute() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--until", "10:65"])
+    cmd.args(&["at", "10:65"])
         .assert()
         .failure()
         .stderr(str::contains("Invalid time format"));
@@ -257,7 +230,7 @@ fn test_until_time_in_future() {
     let target_time_str = target_time.format("%H:%M:%S").to_string();
 
     let start_time = Instant::now();
-    cmd.args(&["--until", &target_time_str]).assert().success();
+    cmd.args(&["at", &target_time_str]).assert().success();
     let elapsed = start_time.elapsed();
 
     assert!(elapsed >= chrono::Duration::seconds(1).to_std().unwrap());
@@ -271,7 +244,7 @@ fn test_parse_time_until_hh_mm() {
     let target_time = now + chrono::Duration::minutes(1);
     let target_time_str = target_time.format("%H:%M").to_string();
 
-    cmd.args(&["--until", &target_time_str]).assert().success();
+    cmd.args(&["at", &target_time_str]).assert().success();
 }
 
 // New tests for Cli helper methods
@@ -324,7 +297,7 @@ fn test_verbose_period() {
 #[test]
 fn test_triangular_distribution_args() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--triangular", "--triangular-min", "0.0", "--triangular-max", "1.0", "--triangular-mode", "0.5"])
+    cmd.args(&["t", "0.0", "1.0", "0.5"])
         .assert()
         .success();
 }
@@ -333,7 +306,7 @@ fn test_triangular_distribution_args() {
 fn test_triangular_distribution_wait_time() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     let start = Instant::now();
-    cmd.args(&["--triangular", "--triangular-min", "0.1", "--triangular-max", "0.5", "--triangular-mode", "0.2"])
+    cmd.args(&["t", "0.1", "0.5", "0.2"])
         .assert()
         .success();
     let elapsed = start.elapsed();
@@ -345,7 +318,7 @@ fn test_triangular_distribution_wait_time() {
 #[test]
 fn test_normal_distribution_args() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--normal", "--normal-mean", "1s", "--normal-std-dev", "0.1"])
+    cmd.args(&["n", "1s", "0.1"])
         .assert()
         .success();
 }
@@ -353,7 +326,7 @@ fn test_normal_distribution_args() {
 #[test]
 fn test_exponential_distribution_args() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--exponential", "--exponential-lambda", "0.5"])
+    cmd.args(&["e", "0.5"])
         .assert()
         .success();
 }
@@ -361,7 +334,7 @@ fn test_exponential_distribution_args() {
 #[test]
 fn test_log_normal_distribution_args() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--log-normal", "--log-normal-mean", "1s", "--log-normal-std-dev", "0.1"])
+    cmd.args(&["ln", "1s", "0.1"])
         .assert()
         .success();
 }
@@ -369,7 +342,7 @@ fn test_log_normal_distribution_args() {
 #[test]
 fn test_pareto_distribution_args() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--pareto", "--pareto-scale", "1.0", "--pareto-shape", "1.5"])
+    cmd.args(&["par", "1.0", "1.5"])
         .assert()
         .success();
 }
@@ -379,16 +352,16 @@ fn test_pareto_distribution_args() {
 #[test]
 fn test_mutually_exclusive_distribution_args() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--duration", "1s", "--normal"])
+    cmd.args(&["d", "1s", "n", "1s", "0.1"])
         .assert()
         .failure()
-        .stderr(str::contains("the argument '--duration <DURATION>' cannot be used with '--normal'"));
+        .stderr(str::contains("error: unexpected argument 'n' found"));
 }
 
 #[test]
 fn test_normal_distribution_missing_param() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--normal", "--normal-mean", "1s"])
+    cmd.args(&["n", "1s"])
         .assert()
         .failure()
         .stderr(str::contains("required arguments were not provided"));
@@ -397,7 +370,7 @@ fn test_normal_distribution_missing_param() {
 #[test]
 fn test_normal_distribution_missing_all_params() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--normal"])
+    cmd.args(&["n"])
         .assert()
         .failure()
         .stderr(str::contains("required arguments were not provided"));
@@ -406,7 +379,7 @@ fn test_normal_distribution_missing_all_params() {
 #[test]
 fn test_exponential_distribution_invalid_lambda() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--exponential-lambda", "-0.5"])
+    cmd.args(&["e", "-0.5"])
         .assert()
         .failure()
         .stderr(str::contains("error: unexpected argument '-0' found"));
@@ -416,7 +389,7 @@ fn test_exponential_distribution_invalid_lambda() {
 fn test_normal_distribution_wait_time() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     let start = Instant::now();
-    cmd.args(&["--normal", "--normal-mean", "1s", "--normal-std-dev", "0.1"])
+    cmd.args(&["n", "1s", "0.1"])
         .assert()
         .success();
     let elapsed = start.elapsed();
@@ -429,7 +402,7 @@ fn test_normal_distribution_wait_time() {
 fn test_exponential_distribution_wait_time() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     let start = Instant::now();
-    cmd.args(&["--exponential", "--exponential-lambda", "1.0"])
+    cmd.args(&["e", "1.0"])
         .assert()
         .success();
     let elapsed = start.elapsed();
@@ -442,7 +415,7 @@ fn test_exponential_distribution_wait_time() {
 fn test_log_normal_distribution_wait_time() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     let start = Instant::now();
-    cmd.args(&["--log-normal", "--log-normal-mean", "1s", "--log-normal-std-dev", "0.5"])
+    cmd.args(&["ln", "1s", "0.5"])
         .assert()
         .success();
     let elapsed = start.elapsed();
@@ -455,7 +428,7 @@ fn test_log_normal_distribution_wait_time() {
 fn test_pareto_distribution_wait_time() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     let start = Instant::now();
-    cmd.args(&["--pareto", "--pareto-scale", "1.0", "--pareto-shape", "2.0"])
+    cmd.args(&["par", "1.0", "2.0"])
         .assert()
         .success();
     let elapsed = start.elapsed();
