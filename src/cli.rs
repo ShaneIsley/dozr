@@ -227,11 +227,47 @@ impl Cli {
         self.verbose == Some(Duration::from_nanos(1))
     }
 
+    /// Returns the verbose update period, if specified.
+    ///
+    /// If adaptive verbose output is enabled, this method returns `None`.
+    /// Otherwise, it returns `Some(Duration)` with the specified update period.
     pub fn verbose_period(&self) -> Option<Duration> {
         if self.is_adaptive_verbose() {
             None
         } else {
             self.verbose
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Local, NaiveTime};
+
+    #[test]
+    fn test_parse_time_until_in_future() {
+        let now = Local::now();
+        let future_time = now + ChronoDuration::minutes(1);
+        let time_str = future_time.format("%H:%M:%S").to_string();
+        let duration = parse_time_until(&time_str).unwrap();
+        assert!(duration > Duration::from_secs(50) && duration <= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_parse_time_until_in_past_rolls_to_next_day() {
+        let now = Local::now();
+        let past_time = now - ChronoDuration::minutes(1);
+        let time_str = past_time.format("%H:%M:%S").to_string();
+        let duration = parse_time_until(&time_str).unwrap();
+        // Should be almost 24 hours
+        assert!(duration > Duration::from_secs(23 * 3600));
+    }
+
+    #[test]
+    fn test_parse_time_invalid_format() {
+        assert!(parse_time_until("invalid-time").is_err());
+        assert!(parse_time_until("25:00").is_err());
+        assert!(parse_time_until("10:65").is_err());
     }
 }

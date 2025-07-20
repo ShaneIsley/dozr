@@ -5,12 +5,46 @@ use clap::Parser;
 pub mod cli;
 pub mod conditions;
 
+#[cfg_attr(test, mockall::automock)]
+pub trait CliArgs {
+    fn get_wait_type(&self) -> cli::WaitType;
+    fn verbose_period(&self) -> Option<std::time::Duration>;
+    fn jitter(&self) -> Option<std::time::Duration>;
+    fn probability(&self) -> Option<f64>;
+}
+
+impl CliArgs for cli::Cli {
+    fn get_wait_type(&self) -> cli::WaitType {
+        self.get_wait_type()
+    }
+
+    fn verbose_period(&self) -> Option<std::time::Duration> {
+        self.verbose_period()
+    }
+
+    fn jitter(&self) -> Option<std::time::Duration> {
+        self.jitter
+    }
+
+    fn probability(&self) -> Option<f64> {
+        self.probability
+    }
+}
+
+/// The main entry point for the dozr application.
+///
+/// This function parses command-line arguments, determines the appropriate
+/// wait condition, and then executes the wait.
 pub fn run() -> Result<()> {
     let args = cli::Cli::parse();
+    run_with_args(&args)
+}
 
+/// The main logic of the application, accepting a Cli object.
+fn run_with_args(args: &dyn CliArgs) -> Result<()> {
     let condition: Box<dyn conditions::WaitCondition> = match args.get_wait_type() {
         cli::WaitType::Duration(duration) => {
-            if let Some(probability) = args.probability {
+            if let Some(probability) = args.probability() {
                 Box::new(conditions::ProbabilisticWait {
                     duration,
                     probability,
@@ -19,7 +53,7 @@ pub fn run() -> Result<()> {
             } else {
                 Box::new(conditions::DurationWait {
                     duration,
-                    jitter: args.jitter,
+                    jitter: args.jitter(),
                     verbose: args.verbose_period(),
                 })
             }
@@ -28,31 +62,31 @@ pub fn run() -> Result<()> {
             mean,
             std_dev,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
         cli::WaitType::Exponential { lambda } => Box::new(conditions::ExponentialWait {
             lambda,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
         cli::WaitType::LogNormal { mean, std_dev } => Box::new(conditions::LogNormalWait {
             mean,
             std_dev,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
         cli::WaitType::Pareto { scale, shape } => Box::new(conditions::ParetoWait {
             scale,
             shape,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
         cli::WaitType::Triangular { min, max, mode } => Box::new(conditions::TriangularWait {
             min,
             max,
             mode,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
         cli::WaitType::Align(align_interval) => Box::new(conditions::TimeAlignWait {
             align_interval,
@@ -62,7 +96,7 @@ pub fn run() -> Result<()> {
             min,
             max,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
         cli::WaitType::Until(sleep_duration) => Box::new(conditions::UntilTimeWait {
             sleep_duration,
@@ -72,7 +106,7 @@ pub fn run() -> Result<()> {
             shape,
             scale,
             verbose: args.verbose_period(),
-            jitter: args.jitter,
+            jitter: args.jitter(),
         }),
     };
 
@@ -253,5 +287,127 @@ mod tests {
         // 10m+ (601s+): 1m
         assert_eq!(get_adaptive_update_period(Duration::from_secs(601)), Duration::from_secs(60));
         assert_eq!(get_adaptive_update_period(Duration::from_secs(1000)), Duration::from_secs(60));
+    }
+
+    // Mocking Cli for run_with_args tests
+    use crate::cli::WaitType;
+
+    #[test]
+    fn test_run_with_args_duration() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Duration(Duration::from_secs(1)));
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+        mock_args.expect_probability().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_normal() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Normal { mean: Duration::from_secs(1), std_dev: 0.1 });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_exponential() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Exponential { lambda: 1.0 });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_log_normal() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::LogNormal { mean: Duration::from_secs(1), std_dev: 0.1 });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_pareto() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Pareto { scale: 1.0, shape: 1.0 });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_uniform() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Uniform { min: Duration::from_secs(1), max: Duration::from_secs(2) });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_triangular() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Triangular { min: 1.0, max: 3.0, mode: 2.0 });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_gamma() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Gamma { shape: 2.0, scale: 1.0 });
+        mock_args.expect_verbose_period().return_const(None);
+        mock_args.expect_jitter().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_align() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Align(Duration::from_secs(1)));
+        mock_args.expect_verbose_period().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
+    }
+
+    #[test]
+    fn test_run_with_args_until() {
+        let mut mock_args = MockCliArgs::new();
+        mock_args.expect_get_wait_type()
+            .times(1)
+            .returning(|| WaitType::Until(Duration::from_secs(1)));
+        mock_args.expect_verbose_period().return_const(None);
+
+        assert!(run_with_args(&mock_args).is_ok());
     }
 }

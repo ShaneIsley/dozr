@@ -737,4 +737,90 @@ mod tests {
         let generated_jitter = jitter_gen.generate(max_jitter);
         assert_eq!(generated_jitter, Duration::ZERO);
     }
+
+    #[test]
+    fn test_normal_wait_calculate_duration() {
+        let wait = NormalWait {
+            mean: Duration::from_secs(1),
+            std_dev: 0.1,
+            verbose: None,
+            jitter: None,
+        };
+        // We can't predict the exact value, but we can check if it's reasonable
+        // and doesn't panic. A simple check is that it's not negative.
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::ZERO);
+    }
+
+    #[test]
+    fn test_exponential_wait_calculate_duration() {
+        let wait = ExponentialWait {
+            lambda: 1.0,
+            verbose: None,
+            jitter: None,
+        };
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::ZERO);
+    }
+
+    #[test]
+    fn test_log_normal_wait_calculate_duration() {
+        let wait = LogNormalWait {
+            mean: Duration::from_secs(1),
+            std_dev: 0.1,
+            verbose: None,
+            jitter: None,
+        };
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::ZERO);
+    }
+
+    #[test]
+    fn test_pareto_wait_calculate_duration() {
+        let wait = ParetoWait {
+            scale: 1.0,
+            shape: 1.0,
+            verbose: None,
+            jitter: None,
+        };
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::ZERO);
+    }
+
+    #[test]
+    fn test_uniform_wait_calculate_duration() {
+        let wait = UniformWait {
+            min: Duration::from_secs(1),
+            max: Duration::from_secs(2),
+            verbose: None,
+            jitter: None,
+        };
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::from_secs(1) && duration <= Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_triangular_wait_calculate_duration() {
+        let wait = TriangularWait {
+            min: 1.0,
+            max: 3.0,
+            mode: 2.0,
+            verbose: None,
+            jitter: None,
+        };
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::from_secs_f64(1.0) && duration <= Duration::from_secs_f64(3.0));
+    }
+
+    #[test]
+    fn test_gamma_wait_calculate_duration() {
+        let wait = GammaWait {
+            shape: 2.0,
+            scale: 1.0,
+            verbose: None,
+            jitter: None,
+        };
+        let duration = wait.calculate_wait_duration().unwrap();
+        assert!(duration >= Duration::ZERO);
+    }
 }
