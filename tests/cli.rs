@@ -5,40 +5,36 @@ use std::time::Instant;
 use std::time::Duration;
 use dozr::cli::Cli;
 
-fn default_cli_args() -> Cli {
+pub fn default_cli_args() -> Cli {
     Cli {
-        pub struct Cli {
-    duration: Option<Duration>,
-    normal: bool,
-    normal_mean: Option<Duration>,
-    normal_std_dev: Option<f64>,
-    exponential: bool,
-    exponential_lambda: Option<f64>,
-    log_normal: bool,
-    log_normal_mean: Option<Duration>,
-    log_normal_std_dev: Option<f64>,
-    pareto: bool,
-    pareto_scale: Option<f64>,
-    pareto_shape: Option<f64>,
-    weibull: bool,
-    weibull_shape: Option<f64>,
-    weibull_scale: Option<f64>,
-    uniform: bool,
-    uniform_min: Option<Duration>,
-    uniform_max: Option<Duration>,
-    triangular: bool,
-    triangular_min: Option<f64>,
-    triangular_max: Option<f64>,
-    triangular_mode: Option<f64>,
-    gamma: bool,
-    gamma_shape: Option<f64>,
-    gamma_scale: Option<f64>,
-    jitter: Option<Duration>,
-    align: Option<Duration>,
-    verbose: Option<Duration>,
-    probability: Option<f64>,
-    until: Option<Duration>,
-}
+        duration: None,
+        normal: false,
+        normal_mean: None,
+        normal_std_dev: None,
+        exponential: false,
+        exponential_lambda: None,
+        log_normal: false,
+        log_normal_mean: None,
+        log_normal_std_dev: None,
+        pareto: false,
+        pareto_scale: None,
+        pareto_shape: None,
+        
+        uniform: false,
+        uniform_min: None,
+        uniform_max: None,
+        triangular: false,
+        triangular_min: None,
+        triangular_max: None,
+        triangular_mode: None,
+        gamma: false,
+        gamma_shape: None,
+        gamma_scale: None,
+        jitter: None,
+        align: None,
+        verbose: None,
+        probability: None,
+        until: None,
     }
 }
 
@@ -166,7 +162,8 @@ fn test_duration_and_align_are_mutually_exclusive() {
 fn test_duration_or_align_is_required() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
     cmd.assert().failure().stderr(str::contains(
-        "error: the following required arguments were not provided:\n  <--duration <DURATION>|--normal|--exponential|--log-normal|--pareto|--weibull|--uniform|--triangular|--gamma|--align <ALIGN>|--until <UNTIL>>"
+        "error: the following required arguments were not provided:
+  <--duration <DURATION>|--normal|--exponential|--log-normal|--pareto|--uniform|--triangular|--gamma|--align <ALIGN>|--until <UNTIL>>"
     ));
 }
 
@@ -377,13 +374,7 @@ fn test_pareto_distribution_args() {
         .success();
 }
 
-#[test]
-fn test_weibull_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["--weibull", "--weibull-shape", "1.5", "--weibull-scale", "1.0"])
-        .assert()
-        .success();
-}
+
 
 #[test]
 fn test_mutually_exclusive_distribution_args() {
@@ -473,15 +464,3 @@ fn test_pareto_distribution_wait_time() {
     assert!(elapsed < Duration::from_secs(10));
 }
 
-#[test]
-fn test_weibull_distribution_wait_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    cmd.args(&["--weibull", "--weibull-shape", "1.0", "--weibull-scale", "1.0"])
-        .assert()
-        .success();
-    let elapsed = start.elapsed();
-    // Weibull distribution with shape=1.0, scale=1.0. Allow a broad range.
-    assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(10));
-}

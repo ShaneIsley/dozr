@@ -163,13 +163,7 @@ Wait for a duration sampled from a Pareto distribution with a scale of 1 second 
 dozr --pareto-scale 1s --pareto-shape 1.5
 ```
 
-### Weibull Distribution
 
-Wait for a duration sampled from a Weibull distribution with a shape of 1.5 and a scale of 1 second:
-
-```bash
-dozr --weibull-shape 1.5 --weibull-scale 1s
-```
 
 ### Uniform Distribution
 

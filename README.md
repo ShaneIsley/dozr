@@ -194,6 +194,10 @@ dozr --gamma-shape 2.0 --gamma-scale 1.0
 
 
 
+## Future Work
+
+The Weibull distribution feature has been temporarily removed due to ongoing issues with its implementation and verification. We plan to re-investigate and potentially re-introduce it in a future release.
+
 ## Contributing
 
 Contributions are welcome! Please refer to the `CONTRIBUTING.md` (to be created) for guidelines.

@@ -34,7 +34,6 @@ fn parse_time_until(s: &str) -> Result<Duration, String> {
     "exponential",
     "log_normal",
     "pareto",
-    "weibull",
     "uniform",
     "triangular",
     "gamma",
@@ -90,17 +89,7 @@ pub struct Cli {
     #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("pareto", "true"))]
     pub pareto_shape: Option<f64>,
 
-    /// Use a Weibull distribution for the wait duration.
-    #[arg(long, group = "wait_type")]
-    pub weibull: bool,
-
-    /// Shape parameter of the Weibull distribution (e.g., "1.5").
-    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("weibull", "true"))]
-    pub weibull_shape: Option<f64>,
-
-    /// Scale parameter of the Weibull distribution (e.g., "1.0").
-    #[arg(long, value_parser = clap::value_parser!(f64), required_if_eq("weibull", "true"))]
-    pub weibull_scale: Option<f64>,
+    
 
     /// Use a Uniform distribution for the wait duration.
     #[arg(long, group = "wait_type")]
@@ -170,7 +159,6 @@ pub enum WaitType {
     Exponential { lambda: f64 },
     LogNormal { mean: Duration, std_dev: f64 },
     Pareto { scale: f64, shape: f64 },
-    Weibull { shape: f64, scale: f64 },
     Uniform { min: Duration, max: Duration },
     Triangular { min: f64, max: f64, mode: f64 },
     Gamma { shape: f64, scale: f64 },
@@ -205,12 +193,7 @@ impl Cli {
                 scale: self.pareto_scale.unwrap(),
                 shape: self.pareto_shape.unwrap(),
             }
-        } else if self.weibull {
-            // These unwraps are safe because of requires_all in clap
-            WaitType::Weibull {
-                shape: self.weibull_shape.unwrap(),
-                scale: self.weibull_scale.unwrap(),
-            }
+        
         } else if self.uniform {
             // These unwraps are safe because of requires_all in clap
             WaitType::Uniform {

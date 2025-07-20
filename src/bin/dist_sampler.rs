@@ -1,7 +1,8 @@
 use clap::Parser;
 
 use rand::rngs::ThreadRng;
-use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Weibull, Uniform, Triangular, Gamma};
+use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Uniform, Triangular, Gamma};
+
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -27,13 +28,13 @@ pub struct Cli {
     #[arg(long)]
     pub lambda: Option<f64>,
 
-    /// Scale parameter for Pareto and Weibull distributions (e.g., "1.0").
+    /// Scale parameter for Pareto distribution (e.g., "1.0").
     #[arg(long)]
-    pub scale: Option<f64>,
+    pub pareto_scale: Option<f64>,
 
-    /// Shape parameter for Pareto and Weibull distributions (e.g., "1.5").
+    /// Shape parameter for Pareto distribution (e.g., "1.5").
     #[arg(long)]
-    pub shape: Option<f64>,
+    pub pareto_shape: Option<f64>,
 
     /// Minimum value for Uniform distribution (e.g., "1s").
     #[arg(long, value_parser = humantime::parse_duration)]
@@ -73,7 +74,8 @@ fn main() -> anyhow::Result<()> {
     for _ in 0..args.count {
         let sample = match args.distribution.as_str() {
             "normal" => {
-                let mean_secs = args.mean.expect("Mean is required for normal distribution").as_secs_f64();
+                let mean_duration = args.mean.expect("Mean is required for normal distribution");
+                let mean_secs = mean_duration.as_secs_f64();
                 let std_dev = args.std_dev.expect("Standard deviation is required for normal distribution");
                 Normal::new(mean_secs, std_dev)?.sample(&mut rng)
             }
@@ -87,14 +89,9 @@ fn main() -> anyhow::Result<()> {
                 LogNormal::new(mean_secs, std_dev)?.sample(&mut rng)
             }
             "pareto" => {
-                let scale = args.scale.expect("Scale is required for pareto distribution");
-                let shape = args.shape.expect("Shape is required for pareto distribution");
+                let scale = args.pareto_scale.expect("Scale is required for pareto distribution");
+                let shape = args.pareto_shape.expect("Shape is required for pareto distribution");
                 Pareto::new(scale, shape)?.sample(&mut rng)
-            }
-            "weibull" => {
-                let shape = args.shape.expect("Shape is required for weibull distribution");
-                let scale = args.scale.expect("Scale is required for weibull distribution");
-                Weibull::new(shape, scale)?.sample(&mut rng)
             }
             "uniform" => {
                 let min_secs = args.min.expect("Min is required for uniform distribution").as_secs_f64();
@@ -106,11 +103,6 @@ fn main() -> anyhow::Result<()> {
                 let max = args.triangular_max.expect("Max is required for triangular distribution");
                 let mode = args.triangular_mode.expect("Mode is required for triangular distribution");
                 Triangular::new(min, max, mode)?.sample(&mut rng)
-            }
-            "gamma" => {
-                let shape = args.gamma_shape.expect("Shape is required for gamma distribution");
-                let scale = args.gamma_scale.expect("Scale is required for gamma distribution");
-                Gamma::new(shape, scale)?.sample(&mut rng)
             }
             "gamma" => {
                 let shape = args.gamma_shape.expect("Shape is required for gamma distribution");

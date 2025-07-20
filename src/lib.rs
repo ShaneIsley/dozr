@@ -47,12 +47,6 @@ pub fn run() -> Result<()> {
             verbose: args.verbose_period(),
             jitter: args.jitter,
         }),
-        cli::WaitType::Weibull { shape, scale } => Box::new(conditions::WeibullWait {
-            shape,
-            scale,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
         cli::WaitType::Triangular { min, max, mode } => Box::new(conditions::TriangularWait {
             min,
             max,
@@ -80,7 +74,6 @@ pub fn run() -> Result<()> {
             verbose: args.verbose_period(),
             jitter: args.jitter,
         }),
-        
     };
 
     condition.wait()
