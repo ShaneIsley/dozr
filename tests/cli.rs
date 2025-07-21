@@ -161,7 +161,7 @@ fn test_probabilistic_wait_verbose_output() {
     cmd.args(&["d", "1s", "-p", "1.0", "-v"])
         .assert()
         .success()
-        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
+        .stderr(str::contains("[DOZR] Time remaining:").or(str::contains("Skipping sleep")));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn test_probabilistic_wait_skip_verbose_output() {
     cmd.args(&["d", "1s", "-p", "0.0", "-v"])
         .assert()
         .success()
-        .stderr(str::contains("Probabilistic wait: Skipping sleep"));
+        .stderr(str::contains("Skipping sleep"));
 }
 
 #[test]

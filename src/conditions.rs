@@ -30,8 +30,8 @@ impl<T: Rng> JitterGenerator for RandomJitterGenerator<T> {
         if max_jitter.is_zero() {
             return Duration::ZERO;
         }
-        let jitter_millis = self.rng.random_range(0..=max_jitter.as_millis() as u64);
-        Duration::from_millis(jitter_millis)
+        let jitter_nanos = self.rng.random_range(0..=max_jitter.as_nanos() as u64);
+        Duration::from_nanos(jitter_nanos)
     }
 }
 
@@ -412,16 +412,21 @@ pub struct TimeAlignWait {
 impl WaitCondition for TimeAlignWait {
     fn calculate_wait_duration(&self) -> Result<Duration> {
         let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-        let sleep_duration = if self.align_interval.as_secs() == 0 {
-            Duration::ZERO
+        let align_interval_nanos = self.align_interval.as_nanos();
+
+        if align_interval_nanos == 0 {
+            return Ok(Duration::ZERO);
+        }
+
+        let now_nanos = now.as_nanos();
+        let remainder = now_nanos % align_interval_nanos;
+
+        let sleep_duration = if remainder == 0 {
+            self.align_interval
         } else {
-            let remainder = now.as_secs() % self.align_interval.as_secs();
-            if remainder == 0 {
-                self.align_interval
-            } else {
-                self.align_interval - Duration::from_secs(remainder)
-            }
+            Duration::from_nanos((align_interval_nanos - remainder) as u64)
         };
+
         Ok(sleep_duration)
     }
 
@@ -520,39 +525,43 @@ impl WaitCondition for ProbabilisticWait {
     }
 
     fn wait(&self) -> Result<()> {
-        let sleep_duration = self.calculate_wait_duration()?;
+        let mut rng = ThreadRng::default();
+        let roll: f64 = rng.random_range(0.0..1.0);
+        let should_sleep = roll <= self.probability;
 
-        if sleep_duration > Duration::ZERO {
+        if should_sleep {
+            let sleep_duration = self.duration;
             match self.verbose {
-                Some(display_interval) => {
+                Some(verbose_option) => {
+                    let is_adaptive = verbose_option.as_nanos() == 1;
                     let display_fn = |remaining: Duration| {
                         if remaining.is_zero() {
                             let now: DateTime<Local> = Local::now();
                             eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
                         } else {
                             let now: DateTime<Local> = Local::now();
-                            eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                            eprintln!(
+                                "[{}] [DOZR] Time remaining: {:.0}s",
+                                now.format("%H:%M:%S"),
+                                remaining.as_secs_f64()
+                            );
                         }
                     };
-                    verbose_wait(self.duration, display_interval, display_fn);
+
+                    if is_adaptive {
+                        adaptive_verbose_wait(sleep_duration, display_fn);
+                    } else {
+                        verbose_wait(sleep_duration, verbose_option, display_fn);
+                    }
                 }
                 None => {
-                    let display_fn = |remaining: Duration| {
-                        if remaining.is_zero() {
-                            let now: DateTime<Local> = Local::now();
-                            eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                        } else {
-                            let now: DateTime<Local> = Local::now();
-                            eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                        }
-                    };
-                    adaptive_verbose_wait(self.duration, display_fn);
+                    std::thread::sleep(sleep_duration);
                 }
             }
-        } else if self.verbose.is_some() || self.verbose.is_none() {
+        } else if self.verbose.is_some() {
             eprintln!(
-                "Probabilistic wait: Skipping sleep (probability: {}, roll: {})",
-                self.probability, self.calculate_wait_duration().unwrap().as_secs_f64() // This is a bit of a hack, but it works for now
+                "Probabilistic wait: Skipping sleep (probability: {}, roll: {:.2})",
+                self.probability, roll
             );
         }
         Ok(())

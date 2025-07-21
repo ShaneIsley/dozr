@@ -22,7 +22,7 @@ fn run_with_args(args: cli::Cli) -> Result<()> {
                 Box::new(conditions::ProbabilisticWait {
                     duration: time,
                     probability,
-                    verbose: args.verbose_period(),
+                    verbose: args.verbose,
                 })
             } else {
                 Box::new(conditions::DurationWait {
