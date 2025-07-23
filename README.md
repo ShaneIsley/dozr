@@ -34,6 +34,20 @@ cargo install dozr
 
 `dozr` is designed to be a flexible and easy-to-use replacement for the standard `sleep` command. Here are a few examples of how to use it:
 
+### `dozr` vs. `sleep`
+
+The standard `sleep` command is simple, typically taking a single argument for the duration to wait (e.g., `sleep 5`). While effective for basic pauses, `dozr` extends this functionality significantly. The table below highlights key differences:
+
+| Feature | `sleep` | `dozr` |
+| :--- | :--- | :--- |
+| **Basic Duration** | `sleep 5` (seconds only) | `dozr d 5s` (supports `s`, `ms`, `m`, `h`, etc.) |
+| **Distribution-based** | No | Yes (Normal, Exponential, Log-Normal, Pareto, Uniform, Triangular, Gamma) |
+| **Time-based Wait** | No | Yes (`dozr at 22:30`) |
+| **Alignment** | No | Yes (`dozr a 1m`) |
+| **Jitter** | No | Yes (`dozr d 10s -j 1s`) |
+| **Probabilistic Wait** | No | Yes (`dozr d 30s -p 0.5`) |
+| **Verbose Output** | No | Yes (`dozr d 10s -v`) |
+
 ### Basic Usage
 
 Wait for a fixed duration:
