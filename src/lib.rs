@@ -16,74 +16,9 @@ pub fn run() -> Result<()> {
 
 /// The main logic of the application, accepting a Cli object.
 fn run_with_args(args: cli::Cli) -> Result<()> {
-    let condition: Box<dyn conditions::WaitCondition> = match args.command {
-        cli::Commands::Duration { time } => {
-            if let Some(probability) = args.probability {
-                Box::new(conditions::ProbabilisticWait {
-                    duration: time,
-                    probability,
-                    verbose: args.verbose,
-                })
-            } else {
-                Box::new(conditions::DurationWait {
-                    duration: time,
-                    jitter: args.jitter,
-                    verbose: args.verbose_period(),
-                })
-            }
-        }
-        cli::Commands::Normal { mean, std_dev } => Box::new(conditions::NormalWait {
-            mean,
-            std_dev,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-        cli::Commands::Exponential { lambda } => Box::new(conditions::ExponentialWait {
-            lambda,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-        cli::Commands::LogNormal { mean, std_dev } => Box::new(conditions::LogNormalWait {
-            mean,
-            std_dev,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-        cli::Commands::Pareto { scale, shape } => Box::new(conditions::ParetoWait {
-            scale,
-            shape,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-        cli::Commands::Triangular { min, max, mode } => Box::new(conditions::TriangularWait {
-            min,
-            max,
-            mode,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-        cli::Commands::Align { interval } => Box::new(conditions::TimeAlignWait {
-            align_interval: interval,
-            verbose: args.verbose_period(),
-        }),
-        cli::Commands::Uniform { min, max } => Box::new(conditions::UniformWait {
-            min,
-            max,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-        cli::Commands::At { time } => Box::new(conditions::UntilTimeWait {
-            sleep_duration: time,
-            verbose: args.verbose_period(),
-        }),
-        cli::Commands::Gamma { shape, scale } => Box::new(conditions::GammaWait {
-            shape,
-            scale,
-            verbose: args.verbose_period(),
-            jitter: args.jitter,
-        }),
-    };
-
+    let condition = args
+        .command
+        .into_wait_condition(args.jitter, args.verbose, args.probability);
     condition.wait()
 }
 

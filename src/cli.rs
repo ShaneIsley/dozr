@@ -1,4 +1,5 @@
 use chrono::{Duration as ChronoDuration, Local, NaiveTime, Timelike};
+use crate::conditions::{self, WaitCondition};
 use clap::{Parser, Subcommand};
 use std::time::Duration;
 
@@ -129,6 +130,83 @@ pub enum Commands {
         #[arg(value_parser = parse_time_until)]
         time: Duration,
     },
+}
+
+impl Commands {
+    pub fn into_wait_condition(
+        self,
+        jitter: Option<Duration>,
+        verbose: Option<Duration>,
+        probability: Option<f64>,
+    ) -> Box<dyn WaitCondition> {
+        match self {
+            Commands::Duration { time } => {
+                if let Some(probability) = probability {
+                    Box::new(conditions::ProbabilisticWait {
+                        duration: time,
+                        probability,
+                        verbose: verbose,
+                    })
+                } else {
+                    Box::new(conditions::DurationWait {
+                        duration: time,
+                        jitter: jitter,
+                        verbose: verbose,
+                    })
+                }
+            }
+            Commands::Normal { mean, std_dev } => Box::new(conditions::NormalWait {
+                mean,
+                std_dev,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+            Commands::Exponential { lambda } => Box::new(conditions::ExponentialWait {
+                lambda,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+            Commands::LogNormal { mean, std_dev } => Box::new(conditions::LogNormalWait {
+                mean,
+                std_dev,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+            Commands::Pareto { scale, shape } => Box::new(conditions::ParetoWait {
+                scale,
+                shape,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+            Commands::Triangular { min, max, mode } => Box::new(conditions::TriangularWait {
+                min,
+                max,
+                mode,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+            Commands::Align { interval } => Box::new(conditions::TimeAlignWait {
+                align_interval: interval,
+                verbose: verbose,
+            }),
+            Commands::Uniform { min, max } => Box::new(conditions::UniformWait {
+                min,
+                max,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+            Commands::At { time } => Box::new(conditions::UntilTimeWait {
+                sleep_duration: time,
+                verbose: verbose,
+            }),
+            Commands::Gamma { shape, scale } => Box::new(conditions::GammaWait {
+                shape,
+                scale,
+                verbose: verbose,
+                jitter: jitter,
+            }),
+        }
+    }
 }
 
 pub enum WaitType {
