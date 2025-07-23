@@ -1,6 +1,6 @@
 [package]
 name = "dozr"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "A flexible `sleep`-like command-line utility for pausing execution with fun timing features."
 license = "MIT"
