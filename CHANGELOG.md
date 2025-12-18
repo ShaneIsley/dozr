@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - GitHub Actions CI workflow for automated build and test
 - MIT LICENSE file in repository root
+- Runnable examples in `examples/` directory (`cargo run --example <name>`)
+- Criterion benchmarks in `benches/` directory (`cargo bench`)
 
 ### Changed
 - Reorganized repository: moved helper scripts to `scripts/` directory
