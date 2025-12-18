@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-12-18
+
 ### Added
 - GitHub Actions CI workflow for automated build and test
 - MIT LICENSE file in repository root
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Reorganized repository: moved helper scripts to `scripts/` directory
+- Made main `dozr` binary explicit in Cargo.toml for clarity
 
 ## [0.4.0] - 2025-01-15
 
@@ -69,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adaptive ETA display with human-readable formatting
 - Support for duration units: seconds, minutes, hours, days, milliseconds
 
-[Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/ShaneIsley/dozr/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ShaneIsley/dozr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ShaneIsley/dozr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ShaneIsley/dozr/compare/v0.1.0...v0.2.0
