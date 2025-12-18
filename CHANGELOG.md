@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Reorganized repository: moved helper scripts to `scripts/` directory
 - Made main `dozr` binary explicit in Cargo.toml for clarity
+- Updated `examples.md` to use current subcommand syntax
+- Updated `TEST.md` to document benchmarks and runnable examples
 
 ## [0.4.0] - 2025-01-15
 
