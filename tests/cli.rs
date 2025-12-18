@@ -69,22 +69,7 @@ fn test_verbose_custom_update_period() {
 #[test]
 fn test_verbose_adaptive_short_wait() {
     let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Test with a 1.5s wait (adaptive 500ms update).
-    let assert = cmd
-        .args(&["d", "1s500ms", "-v"])
-        .assert()
-        .success();
-    let output = assert.get_output();
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
-}
-
-#[test]
-fn test_verbose_adaptive_long_wait() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Test with a 5s wait (adaptive 1s update).
+    // Test with a 5s wait - falls in 0-20s bucket (1s update period)
     let assert = cmd
         .args(&["d", "5s", "-v"])
         .assert()
@@ -93,6 +78,23 @@ fn test_verbose_adaptive_long_wait() {
 
     let stderr_str = String::from_utf8_lossy(&output.stderr);
 
+    // Should have multiple 1-second updates
+    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
+}
+
+#[test]
+fn test_verbose_adaptive_long_wait() {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    // Test with a 21s wait - falls in 21-60s bucket (5s update period)
+    let assert = cmd
+        .args(&["d", "21s", "-v"])
+        .assert()
+        .success();
+    let output = assert.get_output();
+
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+    // Should have updates at 5-second intervals
     assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
 }
 

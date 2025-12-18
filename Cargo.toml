@@ -1,6 +1,6 @@
 [package]
 name = "dozr"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "A flexible `sleep`-like command-line utility for pausing execution with fun timing features."
 license = "MIT"
@@ -17,6 +17,14 @@ rust-version = "1.85.0" # Minimum Rust version required
 name = "dozr"
 path = "src/lib.rs"
 
+[[bin]]
+name = "dozr"
+path = "src/main.rs"
+
+[[bin]]
+name = "dist_sampler"
+path = "src/bin/dist_sampler.rs"
+
 [dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive"] }
@@ -25,11 +33,12 @@ rand = "0.9.1"
 rand_distr = "0.5"
 chrono = "0.4"
 
-[[bin]]
-name = "dist_sampler"
-path = "src/bin/dist_sampler.rs"
-
 [dev-dependencies]
 assert_cmd = "2.0.17"
 predicates = "3.1.0"
 mockall = "0.12.1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "wait_conditions"
+harness = false

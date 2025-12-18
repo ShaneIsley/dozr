@@ -49,3 +49,30 @@ cargo test
 ```
 
 This command will compile and run all the unit and integration tests, providing a comprehensive overview of the project's health.
+
+## Benchmarks
+
+Performance benchmarks are located in the `benches/` directory and use the [Criterion](https://github.com/bheisler/criterion.rs) framework. These benchmarks measure the computational overhead of calculating wait durations for each distribution type.
+
+To run the benchmarks:
+
+```bash
+cargo bench
+```
+
+Benchmark results are saved to `target/criterion/` with HTML reports for visualization.
+
+## Runnable Examples
+
+The `examples/` directory contains runnable examples demonstrating library usage:
+
+```bash
+# Basic duration waits with jitter
+cargo run --example basic_wait
+
+# Statistical distribution sampling
+cargo run --example distributions
+
+# Verbose progress output demonstrations
+cargo run --example verbose_progress
+```

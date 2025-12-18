@@ -9,13 +9,13 @@ This document provides various examples of how to use the `dozr` command-line ut
 Wait for 10 seconds:
 
 ```bash
-dozr --duration 10s
+dozr d 10s
 ```
 
 Wait for 1 minute and 30 seconds:
 
 ```bash
-dozr --duration 1m30s
+dozr d 1m30s
 ```
 
 ### Waiting with Jitter
@@ -25,7 +25,7 @@ Add a random delay to your wait. The jitter value specifies the *maximum* additi
 Wait for 5 seconds, plus a random duration between 0 and 2 seconds:
 
 ```bash
-dozr --duration 5s --jitter 2s
+dozr d 5s -j 2s
 ```
 
 This can be useful for distributing load or simulating more natural delays in scripts.
@@ -37,13 +37,13 @@ Use the `--verbose` or `-v` flag to see real-time status updates, including the 
 Wait for 30 seconds with verbose output:
 
 ```bash
-dozr --duration 30s --verbose
+dozr d 30s -v
 ```
 
 Combine verbose output with jitter:
 
 ```bash
-dozr --duration 1m --jitter 10s -v
+dozr d 1m -j 10s -v
 ```
 
 ### Custom Verbose Update Period
@@ -51,13 +51,13 @@ dozr --duration 1m --jitter 10s -v
 Specify a custom update period for verbose messages (e.g., every 250 milliseconds):
 
 ```bash
-dozr --duration 5s --verbose 250ms
+dozr d 5s -v 250ms
 ```
 
 Set verbose messages to update every 5 seconds:
 
 ```bash
-dozr --duration 1m --verbose 5s
+dozr d 1m -v 5s
 ```
 
 ### Time Alignment
@@ -67,19 +67,33 @@ Align execution to the next even time interval. This is useful for synchronizing
 Wait until the next even 5-second mark:
 
 ```bash
-dozr --align 5s
+dozr a 5s
 ```
 
 Wait until the next even 10-second mark, with verbose output:
 
 ```bash
-dozr --align 10s --verbose
+dozr a 10s -v
 ```
 
 Combine with verbose output and a custom update period:
 
 ```bash
-dozr --align 15s --verbose 1s
+dozr a 15s -v 1s
+```
+
+### Wait Until a Specific Time
+
+Wait until a specific time of day:
+
+```bash
+dozr at 22:30
+```
+
+Wait until 2:30 PM with verbose output:
+
+```bash
+dozr at 14:30:00 -v
 ```
 
 ### Probabilistic Delay
@@ -89,25 +103,25 @@ Execute a wait with a given probability. This is useful for simulating intermitt
 Wait for 5 seconds with a 50% chance:
 
 ```bash
-dozr --duration 5s --probability 0.5
+dozr d 5s -p 0.5
 ```
 
-Wait for 10 seconds with a 100% chance (equivalent to `dozr 10s`):
+Wait for 10 seconds with a 100% chance (equivalent to `dozr d 10s`):
 
 ```bash
-dozr --duration 10s --probability 1.0
+dozr d 10s -p 1.0
 ```
 
 Wait for 10 seconds with a 0% chance (will not wait):
 
 ```bash
-dozr --duration 10s --probability 0.0
+dozr d 10s -p 0.0
 ```
 
 Combine with verbose output:
 
 ```bash
-dozr --duration 3s --probability 0.75 --verbose
+dozr d 3s -p 0.75 -v
 ```
 
 ### Using `dozr` in Pipelines
@@ -118,14 +132,14 @@ Run a command, wait, then run another command, showing `dozr`'s progress:
 
 ```bash
 echo "Starting process..."
-dozr --duration 5s -v
+dozr d 5s -v
 echo "Process complete."
 ```
 
 Redirect `dozr`'s verbose output to a log file:
 
 ```bash
-dozr --duration 1m --jitter 5s -v 2> dozr_progress.log
+dozr d 1m -j 5s -v 2> dozr_progress.log
 cat dozr_progress.log
 ```
 
@@ -133,10 +147,10 @@ cat dozr_progress.log
 
 ### Normal Distribution
 
-Wait for a duration sampled from a Normal distribution with a mean of 1 second and a standard deviation of 100 milliseconds:
+Wait for a duration sampled from a Normal distribution with a mean of 1 second and a standard deviation of 0.1:
 
 ```bash
-dozr --normal-mean 1s --normal-std-dev 100ms
+dozr n 1s 0.1
 ```
 
 ### Exponential Distribution
@@ -144,49 +158,60 @@ dozr --normal-mean 1s --normal-std-dev 100ms
 Wait for a duration sampled from an Exponential distribution with a lambda (rate parameter) of 0.5:
 
 ```bash
-dozr --exponential-lambda 0.5
+dozr e 0.5
 ```
 
 ### Log-Normal Distribution
 
-Wait for a duration sampled from a Log-Normal distribution with a mean of 1 second and a standard deviation of 100 milliseconds:
+Wait for a duration sampled from a Log-Normal distribution with a mean of 1 second and a standard deviation of 0.5:
 
 ```bash
-dozr --log-normal-mean 1s --log-normal-std-dev 100ms
+dozr ln 1s 0.5
 ```
 
 ### Pareto Distribution
 
-Wait for a duration sampled from a Pareto distribution with a scale of 1 second and a shape of 1.5:
+Wait for a duration sampled from a Pareto distribution with a scale of 1.0 and a shape of 2.0:
 
 ```bash
-dozr --pareto-scale 1s --pareto-shape 1.5
+dozr par 1.0 2.0
 ```
-
-
 
 ### Uniform Distribution
 
 Wait for a duration sampled from a Uniform distribution between 1 second and 5 seconds:
 
 ```bash
-dozr --uniform-min 1s --uniform-max 5s
+dozr u 1s 5s
 ```
 
 ### Triangular Distribution
 
-Wait for a duration sampled from a Triangular distribution with a minimum of 0.0, a maximum of 1.0, and a mode of 0.5:
+Wait for a duration sampled from a Triangular distribution with a minimum of 0.0, a maximum of 10.0, and a mode of 5.0:
 
 ```bash
-dozr --triangular-min 0.0 --triangular-max 1.0 --triangular-mode 0.5
+dozr t 0.0 10.0 5.0
 ```
 
 ### Gamma Distribution
 
-Wait for a duration sampled from a Gamma distribution with a shape of 2.0 and a scale of 1.0:
+Wait for a duration sampled from a Gamma distribution with a shape of 2.0 and a scale of 1.5:
 
 ```bash
-dozr --gamma-shape 2.0 --gamma-scale 1.0
+dozr g 2.0 1.5
 ```
 
+## Library Usage
 
+For programmatic usage, see the runnable examples in the `examples/` directory:
+
+```bash
+# Basic duration waits
+cargo run --example basic_wait
+
+# Statistical distribution sampling
+cargo run --example distributions
+
+# Verbose progress output
+cargo run --example verbose_progress
+```
