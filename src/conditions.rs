@@ -8,6 +8,35 @@ use chrono::{Local, DateTime};
 
 use std::time::{Duration, SystemTime};
 
+/// Helper function to perform a wait with optional verbose output.
+///
+/// - If `verbose` is `None`, performs a simple sleep with no output.
+/// - If `verbose` is `Some(duration)` where duration is 1ns, uses adaptive verbose output.
+/// - Otherwise, uses fixed-interval verbose output with the specified update period.
+fn perform_wait(sleep_duration: Duration, verbose: Option<Duration>) {
+    match verbose {
+        None => {
+            std::thread::sleep(sleep_duration);
+        }
+        Some(update_period) => {
+            let is_adaptive = update_period.as_nanos() == 1;
+            let display_fn = |remaining: Duration| {
+                let now: DateTime<Local> = Local::now();
+                if remaining.is_zero() {
+                    eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
+                } else {
+                    eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
+                }
+            };
+            if is_adaptive {
+                adaptive_verbose_wait(sleep_duration, display_fn);
+            } else {
+                verbose_wait(sleep_duration, update_period, display_fn);
+            }
+        }
+    }
+}
+
 // 1. Define a dedicated trait for jitter generation.
 // This makes the dependency explicit and easy to mock.
 pub trait JitterGenerator {
@@ -75,32 +104,7 @@ impl WaitCondition for NormalWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -123,32 +127,7 @@ impl WaitCondition for ExponentialWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -173,32 +152,7 @@ impl WaitCondition for LogNormalWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -222,32 +176,7 @@ impl WaitCondition for ParetoWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -275,32 +204,7 @@ impl WaitCondition for UniformWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -325,32 +229,7 @@ impl WaitCondition for TriangularWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -374,32 +253,7 @@ impl WaitCondition for GammaWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -432,33 +286,7 @@ impl WaitCondition for TimeAlignWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -481,33 +309,7 @@ impl WaitCondition for UntilTimeWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }
@@ -530,34 +332,7 @@ impl WaitCondition for ProbabilisticWait {
         let should_sleep = roll <= self.probability;
 
         if should_sleep {
-            let sleep_duration = self.duration;
-            match self.verbose {
-                Some(verbose_option) => {
-                    let is_adaptive = verbose_option.as_nanos() == 1;
-                    let display_fn = |remaining: Duration| {
-                        if remaining.is_zero() {
-                            let now: DateTime<Local> = Local::now();
-                            eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                        } else {
-                            let now: DateTime<Local> = Local::now();
-                            eprintln!(
-                                "[{}] [DOZR] Time remaining: {:.0}s",
-                                now.format("%H:%M:%S"),
-                                remaining.as_secs_f64()
-                            );
-                        }
-                    };
-
-                    if is_adaptive {
-                        adaptive_verbose_wait(sleep_duration, display_fn);
-                    } else {
-                        verbose_wait(sleep_duration, verbose_option, display_fn);
-                    }
-                }
-                None => {
-                    std::thread::sleep(sleep_duration);
-                }
-            }
+            perform_wait(self.duration, self.verbose);
         } else if self.verbose.is_some() {
             eprintln!(
                 "Probabilistic wait: Skipping sleep (probability: {}, roll: {:.2})",
@@ -577,33 +352,7 @@ impl WaitCondition for DurationWait {
 
     fn wait(&self) -> Result<()> {
         let sleep_duration = self.calculate_wait_duration()?;
-
-        match self.verbose {
-            Some(display_interval) => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                verbose_wait(sleep_duration, display_interval, display_fn);
-            }
-            None => {
-                let display_fn = |remaining: Duration| {
-                    if remaining.is_zero() {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] Wait complete.", now.format("%H:%M:%S"));
-                    } else {
-                        let now: DateTime<Local> = Local::now();
-                        eprintln!("[{}] [DOZR] Time remaining: {:.0}s", now.format("%H:%M:%S"), remaining.as_secs_f64());
-                    }
-                };
-                adaptive_verbose_wait(sleep_duration, display_fn);
-            }
-        }
+        perform_wait(sleep_duration, self.verbose);
         Ok(())
     }
 }

@@ -209,54 +209,7 @@ impl Commands {
     }
 }
 
-pub enum WaitType {
-    Duration(Duration),
-    Normal { mean: Duration, std_dev: f64 },
-    Exponential { lambda: f64 },
-    LogNormal { mean: Duration, std_dev: f64 },
-    Pareto { scale: f64, shape: f64 },
-    Uniform { min: Duration, max: Duration },
-    Triangular { min: f64, max: f64, mode: f64 },
-    Gamma { shape: f64, scale: f64 },
-    Align(Duration),
-    Until(Duration),
-}
-
 impl Cli {
-    pub fn get_wait_type(&self) -> WaitType {
-        match &self.command {
-            Commands::Duration { time } => WaitType::Duration(*time),
-            Commands::Normal { mean, std_dev } => WaitType::Normal {
-                mean: *mean,
-                std_dev: *std_dev,
-            },
-            Commands::Exponential { lambda } => WaitType::Exponential { lambda: *lambda },
-            Commands::LogNormal { mean, std_dev } => WaitType::LogNormal {
-                mean: *mean,
-                std_dev: *std_dev,
-            },
-            Commands::Pareto { scale, shape } => WaitType::Pareto {
-                scale: *scale,
-                shape: *shape,
-            },
-            Commands::Uniform { min, max } => WaitType::Uniform {
-                min: *min,
-                max: *max,
-            },
-            Commands::Triangular { min, max, mode } => WaitType::Triangular {
-                min: *min,
-                max: *max,
-                mode: *mode,
-            },
-            Commands::Gamma { shape, scale } => WaitType::Gamma {
-                shape: *shape,
-                scale: *scale,
-            },
-            Commands::Align { interval } => WaitType::Align(*interval),
-            Commands::At { time } => WaitType::Until(*time),
-        }
-    }
-
     pub fn is_adaptive_verbose(&self) -> bool {
         self.verbose == Some(Duration::from_nanos(1))
     }
