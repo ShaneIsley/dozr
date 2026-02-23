@@ -1,6 +1,6 @@
 # dozr Examples
 
-This document provides various examples of how to use the `dozr` command-line utility.
+Examples of `dozr` usage.
 
 ## Basic Usage
 
@@ -20,7 +20,7 @@ dozr d 1m30s
 
 ### Waiting with Jitter
 
-Add a random delay to your wait. The jitter value specifies the *maximum* additional random duration.
+The jitter value specifies the *maximum* additional random duration.
 
 Wait for 5 seconds, plus a random duration between 0 and 2 seconds:
 
@@ -28,11 +28,11 @@ Wait for 5 seconds, plus a random duration between 0 and 2 seconds:
 dozr d 5s -j 2s
 ```
 
-This can be useful for distributing load or simulating more natural delays in scripts.
+Use this to distribute load or simulate natural delays in scripts.
 
 ### Verbose Output
 
-Use the `--verbose` or `-v` flag to see real-time status updates, including the estimated time remaining (ETA). By default, updates are adaptive (e.g., every 1 second for long waits, 500ms for short waits).
+Use the `--verbose` or `-v` flag to see real-time status updates, including estimated time remaining. Updates are adaptive by default (e.g., every 1 second for long waits, 500ms for short waits).
 
 Wait for 30 seconds with verbose output:
 
@@ -62,7 +62,7 @@ dozr d 1m -v 5s
 
 ### Time Alignment
 
-Align execution to the next even time interval. This is useful for synchronizing tasks to specific points in time (e.g., on the hour, every 15 minutes).
+Align execution to the next even time interval. Use this to synchronize tasks to specific points in time (e.g., on the hour, every 15 minutes).
 
 Wait until the next even 5-second mark:
 
@@ -98,7 +98,7 @@ dozr at 14:30:00 -v
 
 ### Probabilistic Delay
 
-Execute a wait with a given probability. This is useful for simulating intermittent delays or for chaos engineering.
+Execute a wait with a given probability. Use this to simulate intermittent delays or for chaos engineering.
 
 Wait for 5 seconds with a 50% chance:
 
@@ -126,9 +126,9 @@ dozr d 3s -p 0.75 -v
 
 ### Using `dozr` in Pipelines
 
-Since `dozr` prints its verbose output to `stderr`, it can be easily integrated into shell pipelines without interfering with `stdout`.
+`dozr` prints verbose output to `stderr`, so it integrates cleanly into shell pipelines without affecting `stdout`.
 
-Run a command, wait, then run another command, showing `dozr`'s progress:
+Run a command, wait, then run another, showing `dozr`'s progress:
 
 ```bash
 echo "Starting process..."
@@ -147,7 +147,7 @@ cat dozr_progress.log
 
 ### Normal Distribution
 
-Wait for a duration sampled from a Normal distribution with a mean of 1 second and a standard deviation of 0.1:
+Sample from a Normal distribution with a mean of 1 second and a standard deviation of 0.1:
 
 ```bash
 dozr n 1s 0.1
@@ -155,7 +155,7 @@ dozr n 1s 0.1
 
 ### Exponential Distribution
 
-Wait for a duration sampled from an Exponential distribution with a lambda (rate parameter) of 0.5:
+Sample from an Exponential distribution with a lambda (rate parameter) of 0.5:
 
 ```bash
 dozr e 0.5
@@ -163,7 +163,7 @@ dozr e 0.5
 
 ### Log-Normal Distribution
 
-Wait for a duration sampled from a Log-Normal distribution with a mean of 1 second and a standard deviation of 0.5:
+Sample from a Log-Normal distribution with a mean of 1 second and a standard deviation of 0.5:
 
 ```bash
 dozr ln 1s 0.5
@@ -171,7 +171,7 @@ dozr ln 1s 0.5
 
 ### Pareto Distribution
 
-Wait for a duration sampled from a Pareto distribution with a scale of 1.0 and a shape of 2.0:
+Sample from a Pareto distribution with a scale of 1.0 and a shape of 2.0:
 
 ```bash
 dozr par 1.0 2.0
@@ -179,7 +179,7 @@ dozr par 1.0 2.0
 
 ### Uniform Distribution
 
-Wait for a duration sampled from a Uniform distribution between 1 second and 5 seconds:
+Sample from a Uniform distribution between 1 second and 5 seconds:
 
 ```bash
 dozr u 1s 5s
@@ -187,7 +187,7 @@ dozr u 1s 5s
 
 ### Triangular Distribution
 
-Wait for a duration sampled from a Triangular distribution with a minimum of 0.0, a maximum of 10.0, and a mode of 5.0:
+Sample from a Triangular distribution with a minimum of 0.0, a maximum of 10.0, and a mode of 5.0:
 
 ```bash
 dozr t 0.0 10.0 5.0
@@ -195,7 +195,7 @@ dozr t 0.0 10.0 5.0
 
 ### Gamma Distribution
 
-Wait for a duration sampled from a Gamma distribution with a shape of 2.0 and a scale of 1.5:
+Sample from a Gamma distribution with a shape of 2.0 and a scale of 1.5:
 
 ```bash
 dozr g 2.0 1.5
@@ -203,7 +203,7 @@ dozr g 2.0 1.5
 
 ## Library Usage
 
-For programmatic usage, see the runnable examples in the `examples/` directory:
+For programmatic usage, see the `examples/` directory:
 
 ```bash
 # Basic duration waits

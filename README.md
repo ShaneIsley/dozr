@@ -1,9 +1,9 @@
-# Dozr: A flexible `sleep`-like command-line utility for pausing execution with fun timing features.
+# Dozr: A flexible `sleep`-like command-line utility
 
 [![Latest Version](https://img.shields.io/crates/v/dozr.svg)](https://crates.io/crates/dozr)
 [![License](https://img.shields.io/crates/l/dozr.svg)](https://github.com/ShaneIsley/dozr/blob/main/LICENSE)
 
-`dozr` is a command-line utility that extends the functionality of the standard `sleep` command, providing a variety of ways to pause execution, including waiting for a fixed duration, waiting until a specific time of day, or waiting for a duration sampled from a statistical distribution.
+`dozr` extends the standard `sleep` command. It pauses execution for a fixed duration, until a specific time of day, or for a duration sampled from a statistical distribution.
 
 ## Features
 
@@ -24,7 +24,7 @@
 
 ## Installation
 
-`dozr` can be installed from [crates.io](https://crates.io/crates/dozr) using `cargo`:
+Install `dozr` from [crates.io](https://crates.io/crates/dozr) using `cargo`:
 
 ```bash
 cargo install dozr
@@ -32,11 +32,11 @@ cargo install dozr
 
 ## Usage
 
-`dozr` is designed to be a flexible and easy-to-use replacement for the standard `sleep` command. Here are a few examples of how to use it:
+`dozr` is a flexible replacement for the standard `sleep` command.
 
 ### `dozr` vs. `sleep`
 
-The standard `sleep` command is simple, typically taking a single argument for the duration to wait (e.g., `sleep 5`). While effective for basic pauses, `dozr` extends this functionality significantly. The table below highlights key differences:
+`sleep` takes a single duration argument (e.g., `sleep 5`). The table below highlights key differences:
 
 | Feature | `sleep` | `dozr` |
 | :--- | :--- | :--- |
@@ -59,7 +59,7 @@ dozr d 5s
 
 ### Distribution-Based Waits
 
-Wait for a duration sampled from a Normal distribution with a mean of 10 seconds and a standard deviation of 2 seconds:
+Sample a wait from a Normal distribution with a mean of 10 seconds and a standard deviation of 2 seconds:
 
 ```bash
 # Wait for a duration sampled from a Normal distribution
@@ -77,14 +77,14 @@ dozr at 22:30
 
 ### Other Options
 
-Add a random duration of jitter up to 1 second to a 10-second wait:
+Add up to 1 second of random jitter to a 10-second wait:
 
 ```bash
 # Wait for 10 seconds with up to 1 second of jitter
 dozr d 10s -j 1s
 ```
 
-Wait for 30 seconds with a 50% probability of actually waiting:
+Wait 30 seconds with a 50% chance of waiting:
 
 ```bash
 # Wait for 30 seconds with a 50% probability
