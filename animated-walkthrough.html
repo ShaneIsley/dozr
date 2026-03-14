@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dozr — Interactive Wait Strategy Visualizer</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080812;--sf:#101020;--sf2:#181830;--bd:#252540;
+  --tx:#d0d0ee;--mt:#6060a0;--cy:#00d4ff;--or:#ff7040;
+  --gn:#00e87a;--pu:#b070ff;--rd:#ff3060;--yw:#ffcc00;
+}
+html,body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;line-height:1.5}
+header{background:linear-gradient(90deg,#080812,#140820 40%,#081420);border-bottom:1px solid var(--bd);padding:20px 32px;display:flex;align-items:center;gap:20px}
+.logo{font-family:monospace;font-size:2rem;font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,var(--cy),var(--pu));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.tagline{color:var(--mt);font-size:.9rem}
+.hdr-r{margin-left:auto;display:flex;gap:12px;align-items:center}
+.badge{font-family:monospace;font-size:.75rem;color:var(--mt);background:var(--sf);border:1px solid var(--bd);padding:4px 10px;border-radius:12px}
+.nav{background:var(--sf);border-bottom:1px solid var(--bd);padding:12px 32px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.nav-lbl{font-size:.7rem;color:var(--mt);text-transform:uppercase;letter-spacing:1px;margin-right:8px}
+.nb{background:var(--sf2);border:1px solid var(--bd);color:var(--mt);padding:6px 14px;border-radius:16px;cursor:pointer;font-size:.8rem;font-family:monospace;transition:all .15s}
+.nb:hover{color:var(--cy);border-color:var(--cy)}
+.nb.active{background:rgba(0,212,255,.12);border-color:var(--cy);color:var(--cy);font-weight:600}
+.main{padding:28px 32px;max-width:1300px;margin:0 auto}
+.sec{display:none}
+.sec.active{display:block}
+.sg{display:grid;grid-template-columns:1fr 300px;gap:20px}
+.sh{grid-column:1/-1;padding-bottom:4px;border-bottom:1px solid var(--bd);margin-bottom:4px}
+.sh h2{font-size:1.4rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:12px}
+.cmd{font-family:monospace;font-size:.82rem;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.3);color:var(--cy);padding:3px 10px;border-radius:6px}
+.sh p{color:var(--mt);font-size:.88rem;max-width:760px}
+.sh code{font-family:monospace;background:var(--sf2);color:var(--or);padding:1px 5px;border-radius:3px;font-size:.85em}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:16px}
+.clbl{font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--mt);margin-bottom:10px}
+canvas.dc{display:block;width:100%;height:260px;border-radius:4px;background:var(--sf2)}
+.tlt{margin-top:16px;position:relative}
+.tlk{background:var(--sf2);border:1px solid var(--bd);height:10px;border-radius:5px;overflow:hidden;position:relative}
+.tlf{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--cy),var(--pu));box-shadow:0 0 8px rgba(0,212,255,.4);width:0%;transition:none}
+.tll{font-size:.7rem;color:var(--mt);font-family:monospace;margin-bottom:4px;display:flex;justify-content:space-between}
+.cc{display:flex;flex-direction:column;gap:16px}
+.pm{display:flex;flex-direction:column;gap:6px}
+.pmh{display:flex;justify-content:space-between;align-items:baseline}
+.pmn{font-size:.85rem;color:var(--tx)}
+.pmv{font-family:monospace;font-size:.95rem;font-weight:700;color:var(--cy)}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:var(--sf2);border:1px solid var(--bd);outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--cy);cursor:pointer;box-shadow:0 0 6px rgba(0,212,255,.6)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--cy);cursor:pointer;border:none}
+.bg{display:flex;gap:8px}
+.btn{flex:1;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:.8rem;font-family:monospace;transition:all .15s;text-align:center}
+.bs{background:rgba(0,212,255,.1);border:1px solid var(--cy);color:var(--cy)}
+.bs:hover{background:rgba(0,212,255,.2);box-shadow:0 0 12px rgba(0,212,255,.3)}
+.ba{background:var(--sf2);border:1px solid var(--bd);color:var(--mt)}
+.ba.on{background:rgba(255,112,64,.1);border-color:var(--or);color:var(--or)}
+.ba:hover{border-color:var(--or);color:var(--or)}
+.hint{font-size:.78rem;color:var(--mt);line-height:1.6;border-top:1px solid var(--bd);padding-top:12px}
+.hint strong{color:var(--tx)}
+.hint code{font-family:monospace;color:var(--or);background:var(--sf2);padding:1px 4px;border-radius:3px;font-size:.9em}
+.sc{grid-column:1/-1;background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px 20px;display:flex;gap:0;flex-wrap:wrap}
+.st{flex:1;min-width:110px;padding:4px 16px;border-right:1px solid var(--bd)}
+.st:first-child{padding-left:0}.st:last-child{border-right:none}
+.stl{font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--mt);margin-bottom:2px}
+.stv{font-family:monospace;font-size:1.05rem;font-weight:700;color:var(--gn)}
+.stv.s{color:var(--cy)}.stv.w{color:var(--or)}
+.prob-dots{display:flex;gap:3px;flex-wrap:wrap;margin-top:8px}
+.pd{width:10px;height:10px;border-radius:50%}
+.pd.hit{background:var(--gn)}.pd.miss{background:var(--rd)}
+@media(max-width:800px){.sg{grid-template-columns:1fr}.hdr-r{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">dozr</div>
+  <div class="tagline">Interactive Wait Strategy Visualizer</div>
+  <div class="hdr-r"><span class="badge">Rust v0.4.1</span><span class="badge">10 strategies</span></div>
+</header>
+<div class="nav" id="nav">
+  <span class="nav-lbl">Strategy</span>
+  <button class="nb active" data-s="duration">Duration</button>
+  <button class="nb" data-s="uniform">Uniform</button>
+  <button class="nb" data-s="normal">Normal</button>
+  <button class="nb" data-s="exponential">Exponential</button>
+  <button class="nb" data-s="lognormal">Log-Normal</button>
+  <button class="nb" data-s="pareto">Pareto</button>
+  <button class="nb" data-s="triangular">Triangular</button>
+  <button class="nb" data-s="gamma">Gamma</button>
+  <button class="nb" data-s="align">Align</button>
+  <button class="nb" data-s="probabilistic">Probabilistic</button>
+</div>
+<div class="main" id="mc">
+
+<!-- DURATION -->
+<div class="sec active" id="s-duration"><div class="sg">
+  <div class="sh">
+    <h2>Duration <span class="cmd">dozr d &lt;TIME&gt; [-j &lt;JITTER&gt;]</span></h2>
+    <p>Sleeps for a fixed <code>base</code> duration plus a uniformly-sampled jitter in <code>[0, max_jitter]</code>. The simplest strategy.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Sample Distribution</div>
+    <canvas class="dc" id="cv-duration"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-duration">—</span></div><div class="tlk"><div class="tlf" id="tl-duration"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Base Duration</span><span class="pmv" id="pv-dur-base">8.0s</span></div><input type="range" id="pr-dur-base" min="1" max="30" step="0.5" value="8"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Max Jitter</span><span class="pmv" id="pv-dur-jit">3.0s</span></div><input type="range" id="pr-dur-jit" min="0" max="15" step="0.5" value="3"></div>
+    <div class="bg"><button class="btn bs" id="btn-dur">&#9654; Sample</button><button class="btn ba" id="abt-dur">&#8635; Auto</button></div>
+    <div class="hint"><strong>How it works:</strong> <code>DurationWait</code> adds <code>base + Uniform(0, max_jitter)</code>. Jitter is generated via the <code>JitterGenerator</code> trait.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-dur-last">—</div></div>
+    <div class="st"><div class="stl">Min Possible</div><div class="stv s" id="sv-dur-min">—</div></div>
+    <div class="st"><div class="stl">Max Possible</div><div class="stv s" id="sv-dur-max">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-dur-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-dur-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-dur-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- UNIFORM -->
+<div class="sec" id="s-uniform"><div class="sg">
+  <div class="sh">
+    <h2>Uniform <span class="cmd">dozr u &lt;MIN&gt; &lt;MAX&gt;</span></h2>
+    <p>Samples from a Uniform distribution — equal probability across <code>[min, max]</code>. Uses <code>rand_distr::Uniform</code>.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-uniform"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-uniform">—</span></div><div class="tlk"><div class="tlf" id="tl-uniform"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Min</span><span class="pmv" id="pv-uni-min">2.0s</span></div><input type="range" id="pr-uni-min" min="0" max="25" step="0.5" value="2"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Max</span><span class="pmv" id="pv-uni-max">10.0s</span></div><input type="range" id="pr-uni-max" min="1" max="30" step="0.5" value="10"></div>
+    <div class="bg"><button class="btn bs" id="btn-uni">&#9654; Sample</button><button class="btn ba" id="abt-uni">&#8635; Auto</button></div>
+    <div class="hint"><strong>Mean:</strong> <code>(min + max) / 2</code>. Flat PDF between bounds.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-uni-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-uni-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-uni-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-uni-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- NORMAL -->
+<div class="sec" id="s-normal"><div class="sg">
+  <div class="sh">
+    <h2>Normal <span class="cmd">dozr n &lt;MEAN&gt; &lt;STD_DEV&gt;</span></h2>
+    <p>Samples from a Gaussian distribution. Wait clusters around the mean; negative samples are clamped to 0.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-normal"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-normal">—</span></div><div class="tlk"><div class="tlf" id="tl-normal"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Mean (&#956;)</span><span class="pmv" id="pv-nor-mean">10.0s</span></div><input type="range" id="pr-nor-mean" min="0.5" max="30" step="0.5" value="10"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Std Dev (&#963;)</span><span class="pmv" id="pv-nor-sd">3.0</span></div><input type="range" id="pr-nor-sd" min="0.1" max="15" step="0.1" value="3"></div>
+    <div class="bg"><button class="btn bs" id="btn-nor">&#9654; Sample</button><button class="btn ba" id="abt-nor">&#8635; Auto</button></div>
+    <div class="hint"><strong>Rust:</strong> <code>Normal::new(mean_secs, std_dev).sample(&amp;mut rng).max(0.0)</code></div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-nor-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-nor-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-nor-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-nor-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- EXPONENTIAL -->
+<div class="sec" id="s-exponential"><div class="sg">
+  <div class="sh">
+    <h2>Exponential <span class="cmd">dozr e &lt;LAMBDA&gt;</span></h2>
+    <p>Models memoryless inter-arrival times. Rate parameter <code>&#955;</code> controls the decay; mean = <code>1/&#955;</code> seconds.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-exponential"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-exponential">—</span></div><div class="tlk"><div class="tlf" id="tl-exponential"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Lambda (&#955;)</span><span class="pmv" id="pv-exp-lam">0.50</span></div><input type="range" id="pr-exp-lam" min="0.05" max="3" step="0.05" value="0.5"></div>
+    <div class="bg"><button class="btn bs" id="btn-exp">&#9654; Sample</button><button class="btn ba" id="abt-exp">&#8635; Auto</button></div>
+    <div class="hint"><strong>Mean:</strong> <code>1/&#955;</code>. Smaller &#955; = longer average waits. Memoryless property: P(X &gt; s+t | X &gt; s) = P(X &gt; t).</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-exp-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-exp-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-exp-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-exp-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- LOGNORMAL -->
+<div class="sec" id="s-lognormal"><div class="sg">
+  <div class="sh">
+    <h2>Log-Normal <span class="cmd">dozr ln &lt;MEAN&gt; &lt;STD_DEV&gt;</span></h2>
+    <p>The underlying normal is in log-space: always positive, right-skewed. Good for modeling latencies.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-lognormal"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-lognormal">—</span></div><div class="tlk"><div class="tlf" id="tl-lognormal"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Mean (log-space &#956;)</span><span class="pmv" id="pv-ln-mu">1.5</span></div><input type="range" id="pr-ln-mu" min="0" max="4" step="0.1" value="1.5"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Std Dev (log-space &#963;)</span><span class="pmv" id="pv-ln-sig">0.5</span></div><input type="range" id="pr-ln-sig" min="0.1" max="2" step="0.05" value="0.5"></div>
+    <div class="bg"><button class="btn bs" id="btn-ln">&#9654; Sample</button><button class="btn ba" id="abt-ln">&#8635; Auto</button></div>
+    <div class="hint"><strong>Mean:</strong> <code>exp(&#956; + &#963;&#178;/2)</code>. Right-skewed: rare long waits are possible.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-ln-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-ln-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-ln-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-ln-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- PARETO -->
+<div class="sec" id="s-pareto"><div class="sg">
+  <div class="sh">
+    <h2>Pareto <span class="cmd">dozr par &lt;SCALE&gt; &lt;SHAPE&gt;</span></h2>
+    <p>Heavy-tailed power-law distribution. Minimum value = <code>scale</code>, tail weight controlled by <code>shape (&#945;)</code>. Lower &#945; = heavier tail.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-pareto"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-pareto">—</span></div><div class="tlk"><div class="tlf" id="tl-pareto"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Scale (x&#8344;)</span><span class="pmv" id="pv-par-sc">1.0</span></div><input type="range" id="pr-par-sc" min="0.5" max="10" step="0.5" value="1"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Shape (&#945;)</span><span class="pmv" id="pv-par-sh">2.5</span></div><input type="range" id="pr-par-sh" min="0.5" max="6" step="0.1" value="2.5"></div>
+    <div class="bg"><button class="btn bs" id="btn-par">&#9654; Sample</button><button class="btn ba" id="abt-par">&#8635; Auto</button></div>
+    <div class="hint"><strong>Mean:</strong> <code>&#945;*x&#8344;/(&#945;-1)</code> for &#945;&gt;1. The 80/20 rule comes from Pareto distributions.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-par-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-par-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-par-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-par-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- TRIANGULAR -->
+<div class="sec" id="s-triangular"><div class="sg">
+  <div class="sh">
+    <h2>Triangular <span class="cmd">dozr t &lt;MIN&gt; &lt;MAX&gt; &lt;MODE&gt;</span></h2>
+    <p>Triangle-shaped PDF. Most likely value at <code>mode</code>; linearly increases to mode, then linearly decreases.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-triangular"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-triangular">—</span></div><div class="tlk"><div class="tlf" id="tl-triangular"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Min</span><span class="pmv" id="pv-tri-min">1.0s</span></div><input type="range" id="pr-tri-min" min="0" max="15" step="0.5" value="1"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Max</span><span class="pmv" id="pv-tri-max">15.0s</span></div><input type="range" id="pr-tri-max" min="2" max="30" step="0.5" value="15"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Mode</span><span class="pmv" id="pv-tri-mode">5.0s</span></div><input type="range" id="pr-tri-mode" min="0" max="30" step="0.5" value="5"></div>
+    <div class="bg"><button class="btn bs" id="btn-tri">&#9654; Sample</button><button class="btn ba" id="abt-tri">&#8635; Auto</button></div>
+    <div class="hint"><strong>Mean:</strong> <code>(min+max+mode)/3</code>. Useful when you know the most likely, minimum, and maximum durations.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-tri-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-tri-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-tri-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-tri-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- GAMMA -->
+<div class="sec" id="s-gamma"><div class="sg">
+  <div class="sh">
+    <h2>Gamma <span class="cmd">dozr g &lt;SHAPE&gt; &lt;SCALE&gt;</span></h2>
+    <p>Generalizes Exponential (shape=1). Mean = <code>shape * scale</code>. Flexible family for modeling wait times.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Density + Samples</div>
+    <canvas class="dc" id="cv-gamma"></canvas>
+    <div class="tlt"><div class="tll"><span>0s</span><span id="tll-gamma">—</span></div><div class="tlk"><div class="tlf" id="tl-gamma"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Shape (k)</span><span class="pmv" id="pv-gam-sh">3.0</span></div><input type="range" id="pr-gam-sh" min="0.3" max="12" step="0.1" value="3"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Scale (&#952;)</span><span class="pmv" id="pv-gam-sc">2.0</span></div><input type="range" id="pr-gam-sc" min="0.1" max="8" step="0.1" value="2"></div>
+    <div class="bg"><button class="btn bs" id="btn-gam">&#9654; Sample</button><button class="btn ba" id="abt-gam">&#8635; Auto</button></div>
+    <div class="hint"><strong>Special case:</strong> shape=1 gives Exponential. shape=n (integer) is the sum of n Exponential(1/scale) waits.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Sample</div><div class="stv" id="sv-gam-last">—</div></div>
+    <div class="st"><div class="stl">Theo. Mean</div><div class="stv s" id="sv-gam-tmean">—</div></div>
+    <div class="st"><div class="stl">Emp. Mean</div><div class="stv w" id="sv-gam-emean">—</div></div>
+    <div class="st"><div class="stl">Samples</div><div class="stv w" id="sv-gam-n">0</div></div>
+  </div>
+</div></div>
+
+<!-- ALIGN -->
+<div class="sec" id="s-align"><div class="sg">
+  <div class="sh">
+    <h2>Align <span class="cmd">dozr a &lt;INTERVAL&gt;</span></h2>
+    <p>Waits until the next even interval boundary using UNIX epoch arithmetic. <code>dozr a 1m</code> waits until the next whole minute.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Time Alignment Visualization</div>
+    <canvas class="dc" id="cv-align"></canvas>
+    <div class="tlt"><div class="tll"><span>Wait</span><span id="tll-align">—</span></div><div class="tlk"><div class="tlf" id="tl-align"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Interval</span><span class="pmv" id="pv-ali-int">60s</span></div><input type="range" id="pr-ali-int" min="5" max="300" step="5" value="60"></div>
+    <div class="bg"><button class="btn bs" id="btn-ali">&#9654; Calculate Now</button></div>
+    <div class="hint"><strong>Math:</strong> <code>remainder = now_nanos % interval_nanos</code>. Sleep = <code>interval - remainder</code>. If remainder is 0, sleep a full interval.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Current Time (mod interval)</div><div class="stv" id="sv-ali-pos">—</div></div>
+    <div class="st"><div class="stl">Wait Until Next Boundary</div><div class="stv s" id="sv-ali-wait">—</div></div>
+    <div class="st"><div class="stl">Interval</div><div class="stv w" id="sv-ali-int">—</div></div>
+  </div>
+</div></div>
+
+<!-- PROBABILISTIC -->
+<div class="sec" id="s-probabilistic"><div class="sg">
+  <div class="sh">
+    <h2>Probabilistic <span class="cmd">dozr d &lt;TIME&gt; -p &lt;PROB&gt;</span></h2>
+    <p>Wraps a fixed duration with a coin-flip gate. Rolls <code>[0.0, 1.0)</code>; sleeps only if <code>roll &lt;= probability</code>.</p>
+  </div>
+  <div class="card">
+    <div class="clbl">Probability Gauge + Trial History</div>
+    <canvas class="dc" id="cv-probabilistic"></canvas>
+    <div class="tlt"><div class="tll"><span>Last Roll</span><span id="tll-prob">—</span></div><div class="tlk"><div class="tlf" id="tl-prob"></div></div></div>
+  </div>
+  <div class="card cc">
+    <div class="clbl">Parameters</div>
+    <div class="pm"><div class="pmh"><span class="pmn">Probability</span><span class="pmv" id="pv-prob-p">0.70</span></div><input type="range" id="pr-prob-p" min="0" max="1" step="0.01" value="0.7"></div>
+    <div class="pm"><div class="pmh"><span class="pmn">Duration</span><span class="pmv" id="pv-prob-d">5.0s</span></div><input type="range" id="pr-prob-d" min="1" max="30" step="0.5" value="5"></div>
+    <div class="bg"><button class="btn bs" id="btn-prob">&#9654; Roll</button><button class="btn ba" id="abt-prob">&#8635; Auto</button></div>
+    <div class="hint"><strong>Behavior:</strong> <code>p=1.0</code> always sleeps. <code>p=0.0</code> always skips. Only available with the Duration subcommand.</div>
+  </div>
+  <div class="sc">
+    <div class="st"><div class="stl">Last Roll</div><div class="stv" id="sv-prob-roll">—</div></div>
+    <div class="st"><div class="stl">Result</div><div class="stv" id="sv-prob-res">—</div></div>
+    <div class="st"><div class="stl">Hit Rate</div><div class="stv s" id="sv-prob-rate">—</div></div>
+    <div class="st"><div class="stl">Hits / Trials</div><div class="stv w" id="sv-prob-ht">0 / 0</div></div>
+  </div>
+</div></div>
+
+</div>
+
+<script>
+// ====== MATH UTILITIES ======
+function sNormal(m,s){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.max(0,m+Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)*s)}
+function sExp(l){return -Math.log(1-Math.random())/l}
+function sLogNormal(mu,sig){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.exp(mu+Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)*sig)}
+function sPareto(sc,sh){return sc/Math.pow(Math.random(),1/sh)}
+function sUniform(a,b){return a+(b-a)*Math.random()}
+function sTriangular(a,b,c){const u=Math.random(),F=(c-a)/(b-a);return u<F?a+Math.sqrt(u*(b-a)*(c-a)):b-Math.sqrt((1-u)*(b-a)*(b-c))}
+function sGamma(k,th){if(k<1)return sGamma(1+k,th)*Math.pow(Math.random(),1/k);const d=k-1/3,c=1/Math.sqrt(9*d);while(true){let x,v;do{let u1=0,u2=0;while(!u1)u1=Math.random();while(!u2)u2=Math.random();x=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);v=1+c*x}while(v<=0);v=v*v*v;const u=Math.random();if(u<1-.0331*x*x*x*x)return d*v*th;if(Math.log(u)<.5*x*x+d*(1-v+Math.log(v)))return d*v*th}}
+
+// ====== PDF FUNCTIONS ======
+const S2P=Math.sqrt(2*Math.PI);
+function pNormal(x,m,s){return(1/(s*S2P))*Math.exp(-.5*((x-m)/s)**2)}
+function pExp(x,l){return x>=0?l*Math.exp(-l*x):0}
+function pLogNormal(x,mu,sig){if(x<=0)return 0;return(1/(x*sig*S2P))*Math.exp(-.5*((Math.log(x)-mu)/sig)**2)}
+function pPareto(x,sc,sh){return x<sc?0:(sh*Math.pow(sc,sh))/Math.pow(x,sh+1)}
+function pUniform(x,a,b){return(x<a||x>b)?0:1/(b-a)}
+function pTriangular(x,a,b,c){if(x<a||x>b)return 0;return x<=c?2*(x-a)/((b-a)*(c-a)):2*(b-x)/((b-a)*(b-c))}
+function logGamma(z){const p=[.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(z<.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-logGamma(1-z);z-=1;let x=p[0];for(let i=1;i<9;i++)x+=p[i]/(z+i);const t=z+7.5;return .5*Math.log(2*Math.PI)+(z+.5)*Math.log(t)-t+Math.log(x)}
+function pGamma(x,k,th){if(x<=0)return 0;return Math.exp((k-1)*Math.log(x)-x/th-k*Math.log(th)-logGamma(k))}
+
+// ====== DISTRIBUTION VIZ CLASS ======
+class DistViz{
+  constructor(cid,cfg){
+    this.cv=document.getElementById(cid);
+    this.ctx=this.cv.getContext('2d');
+    this.cfg=cfg;
+    this.parts=[];this.hist=new Array(50).fill(0);
+    this.n=0;this.sum=0;this.last=null;this.lt=0;this.aid=null;this.auid=null;
+    this._resize();this._start();
+  }
+  _resize(){
+    const dpr=window.devicePixelRatio||1,r=this.cv.getBoundingClientRect();
+    this.W=r.width;this.H=r.height||260;
+    this.cv.width=this.W*dpr;this.cv.height=this.H*dpr;
+    this.cv.style.width=this.W+'px';this.cv.style.height=this.H+'px';
+    this.ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  sample(){
+    const p=this.cfg.getP(),x=this.cfg.samp(p),xm=this.cfg.xMax(p);
+    this.parts.push({x,pr:0});
+    if(this.parts.length>50)this.parts.shift();
+    const bin=Math.max(0,Math.min(49,Math.floor(x/xm*50)));
+    this.hist[bin]++;this.n++;this.sum+=x;this.last=x;
+    if(this.cfg.onSample)this.cfg.onSample(x,this.n,this.sum);
+    return x;
+  }
+  reset(){this.parts=[];this.hist=new Array(50).fill(0);this.n=0;this.sum=0;this.last=null}
+  draw(ts){
+    const dt=Math.min(.05,(ts-this.lt)/1000);this.lt=ts;
+    const p=this.cfg.getP(),xm=this.cfg.xMax(p);
+    const c=this.ctx,W=this.W,H=this.H;
+    const PL=45,PR=15,PT=15,PB=35,pW=W-PL-PR,pH=H-PT-PB;
+    c.clearRect(0,0,W,H);
+    const x2c=x=>PL+(x/xm)*pW, y2c=(y,ym)=>PT+pH-(y/ym)*pH;
+    // Grid
+    c.strokeStyle='rgba(255,255,255,.04)';c.lineWidth=1;
+    for(let i=0;i<=5;i++){const x=PL+i/5*pW;c.beginPath();c.moveTo(x,PT);c.lineTo(x,PT+pH);c.stroke()}
+    for(let i=0;i<=4;i++){const y=PT+i/4*pH;c.beginPath();c.moveTo(PL,y);c.lineTo(PL+pW,y);c.stroke()}
+    // PDF
+    const N=200;let pdfV=[],pdfM=0;
+    for(let i=0;i<=N;i++){const x=i/N*xm,y=this.cfg.pdf(x,p);pdfV.push({x,y});if(y>pdfM)pdfM=y}
+    if(!pdfM)pdfM=1;
+    // Histogram
+    const hm=Math.max(...this.hist,1),bw=pW/50;
+    c.fillStyle='rgba(0,232,122,.18)';
+    for(let i=0;i<50;i++){if(!this.hist[i])continue;const bh=this.hist[i]/hm*pH*.8;c.fillRect(PL+i*bw,PT+pH-bh,bw-1,bh)}
+    // PDF fill
+    c.beginPath();c.moveTo(x2c(0),PT+pH);
+    for(const v of pdfV)c.lineTo(x2c(v.x),y2c(v.y,pdfM));
+    c.lineTo(x2c(xm),PT+pH);c.closePath();
+    const g=c.createLinearGradient(0,PT,0,PT+pH);
+    g.addColorStop(0,'rgba(0,212,255,.3)');g.addColorStop(1,'rgba(0,212,255,.02)');
+    c.fillStyle=g;c.fill();
+    // PDF stroke
+    c.beginPath();
+    for(let i=0;i<pdfV.length;i++){const v=pdfV[i];i?c.lineTo(x2c(v.x),y2c(v.y,pdfM)):c.moveTo(x2c(v.x),y2c(v.y,pdfM))}
+    c.strokeStyle='rgba(0,212,255,.85)';c.lineWidth=2;c.stroke();
+    // Particles
+    this.parts=this.parts.filter(p=>p.pr<1);
+    for(const pt of this.parts){
+      pt.pr=Math.min(1,pt.pr+dt*.5);
+      const cx=x2c(pt.x),cy=PT+pt.pr*pH,a=pt.pr<.7?1:1-(pt.pr-.7)/.3;
+      c.beginPath();c.moveTo(cx,PT);c.lineTo(cx,cy);
+      c.strokeStyle=`rgba(255,112,64,${a*.3})`;c.lineWidth=1;c.stroke();
+      c.beginPath();c.arc(cx,cy,4*(1-pt.pr*.3),0,Math.PI*2);
+      c.fillStyle=`rgba(255,112,64,${a})`;c.fill();
+      c.beginPath();c.arc(cx,cy,8,0,Math.PI*2);
+      c.fillStyle=`rgba(255,112,64,${a*.15})`;c.fill();
+    }
+    // Axes labels
+    c.fillStyle='rgba(100,100,160,.8)';c.font='11px monospace';c.textAlign='center';
+    for(let i=0;i<=5;i++){const x=i/5*xm;c.fillText(x<10?x.toFixed(1)+'s':x.toFixed(0)+'s',x2c(x),PT+pH+18)}
+    c.save();c.translate(12,PT+pH/2);c.rotate(-Math.PI/2);c.textAlign='center';c.fillText('density',0,0);c.restore();
+    c.beginPath();c.moveTo(PL,PT+pH);c.lineTo(PL+pW,PT+pH);c.strokeStyle='rgba(100,100,160,.3)';c.lineWidth=1;c.stroke();
+  }
+  _start(){const f=ts=>{this.draw(ts);this.aid=requestAnimationFrame(f)};this.aid=requestAnimationFrame(f)}
+  startAuto(){this.stopAuto();this.auid=setInterval(()=>this.sample(),900)}
+  stopAuto(){if(this.auid){clearInterval(this.auid);this.auid=null}}
+  get isAuto(){return!!this.auid}
+}
+
+// ====== TIMELINE ANIMATION ======
+function animTL(el,frac,dur){
+  const s=performance.now();
+  function step(ts){const t=Math.min(1,(ts-s)/(dur*1000));el.style.width=(frac*100*t)+'%';if(t<1)requestAnimationFrame(step)}
+  requestAnimationFrame(step);
+}
+
+// ====== STRATEGY INSTANCES ======
+const vizzes={};
+const $ =id=>document.getElementById(id);
+
+function fmt(v){return v<10?v.toFixed(2)+'s':v.toFixed(1)+'s'}
+
+// --- Duration ---
+function mkDuration(){
+  const cv=$('cv-duration'),ctx=cv.getContext('2d');
+  let aid,lt=0,parts=[],hist=new Array(50).fill(0),n=0,sum=0,last=null;
+  function gp(){return{base:+$('pr-dur-base').value,jit:+$('pr-dur-jit').value}}
+  function samp(p){return p.base+Math.random()*p.jit}
+  function resize(){const dpr=window.devicePixelRatio||1,r=cv.getBoundingClientRect();cv.width=r.width*dpr;cv.height=(r.height||260)*dpr;cv.style.width=r.width+'px';cv.style.height=(r.height||260)+'px';ctx.setTransform(dpr,0,0,dpr,0,0)}
+  resize();
+  function draw(ts){
+    const dt=Math.min(.05,(ts-lt)/1000);lt=ts;
+    const p=gp(),xm=p.base+p.jit+2,W=cv.clientWidth,H=cv.clientHeight||260;
+    const PL=45,PR=15,PT=15,PB=35,pW=W-PL-PR,pH=H-PT-PB;
+    ctx.clearRect(0,0,W,H);
+    const x2c=x=>PL+(x/xm)*pW;
+    // Grid
+    ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;
+    for(let i=0;i<=5;i++){const x=PL+i/5*pW;ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,PT+pH);ctx.stroke()}
+    // Base region
+    ctx.fillStyle='rgba(0,212,255,.15)';
+    ctx.fillRect(x2c(0),PT,x2c(p.base)-x2c(0),pH);
+    ctx.fillStyle='rgba(0,212,255,.06)';
+    ctx.fillRect(x2c(p.base),PT,x2c(p.base+p.jit)-x2c(p.base),pH);
+    // Labels
+    ctx.fillStyle='rgba(0,212,255,.6)';ctx.font='12px monospace';ctx.textAlign='center';
+    ctx.fillText('base: '+p.base.toFixed(1)+'s',(x2c(0)+x2c(p.base))/2,PT+pH/2);
+    if(p.jit>0){ctx.fillStyle='rgba(176,112,255,.6)';ctx.fillText('jitter: 0-'+p.jit.toFixed(1)+'s',(x2c(p.base)+x2c(p.base+p.jit))/2,PT+pH/2+16)}
+    // Borders
+    ctx.strokeStyle='rgba(0,212,255,.5)';ctx.lineWidth=2;ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(x2c(p.base),PT);ctx.lineTo(x2c(p.base),PT+pH);ctx.stroke();
+    if(p.jit>0){ctx.strokeStyle='rgba(176,112,255,.4)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(x2c(p.base+p.jit),PT);ctx.lineTo(x2c(p.base+p.jit),PT+pH);ctx.stroke();ctx.setLineDash([])}
+    // Histogram
+    const hm=Math.max(...hist,1),bw=pW/50;
+    ctx.fillStyle='rgba(0,232,122,.2)';
+    for(let i=0;i<50;i++){if(!hist[i])continue;const bh=hist[i]/hm*pH*.3;ctx.fillRect(PL+i*bw,PT+pH-bh,bw-1,bh)}
+    // Particles
+    parts=parts.filter(pt=>pt.pr<1);
+    for(const pt of parts){
+      pt.pr=Math.min(1,pt.pr+dt*.5);
+      const cx=x2c(pt.x),cy=PT+pH/2+pt.pr*pH*.4,a=pt.pr<.7?1:1-(pt.pr-.7)/.3;
+      ctx.beginPath();ctx.arc(cx,cy,5*(1-pt.pr*.3),0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,112,64,${a})`;ctx.fill();
+    }
+    // X axis
+    ctx.fillStyle='rgba(100,100,160,.8)';ctx.font='11px monospace';ctx.textAlign='center';
+    for(let i=0;i<=5;i++){const x=i/5*xm;ctx.fillText(x.toFixed(1)+'s',x2c(x),PT+pH+18)}
+    ctx.beginPath();ctx.moveTo(PL,PT+pH);ctx.lineTo(PL+pW,PT+pH);ctx.strokeStyle='rgba(100,100,160,.3)';ctx.lineWidth=1;ctx.stroke();
+    aid=requestAnimationFrame(draw);
+  }
+  aid=requestAnimationFrame(draw);
+  function doSample(){
+    const p=gp(),x=samp(p),xm=p.base+p.jit+2;
+    parts.push({x,pr:0});if(parts.length>40)parts.shift();
+    const bin=Math.max(0,Math.min(49,Math.floor(x/xm*50)));hist[bin]++;n++;sum+=x;last=x;
+    $('sv-dur-last').textContent=fmt(x);
+    $('sv-dur-min').textContent=fmt(p.base);
+    $('sv-dur-max').textContent=fmt(p.base+p.jit);
+    $('sv-dur-tmean').textContent=fmt(p.base+p.jit/2);
+    $('sv-dur-emean').textContent=n?fmt(sum/n):'—';
+    $('sv-dur-n').textContent=n;
+    $('tll-duration').textContent=fmt(p.base+p.jit);
+    animTL($('tl-duration'),Math.min(1,x/(p.base+p.jit+.01)),1.5);
+  }
+  $('btn-dur').onclick=doSample;
+  let aui=null;
+  $('abt-dur').onclick=function(){if(aui){clearInterval(aui);aui=null;this.classList.remove('on')}else{aui=setInterval(doSample,900);this.classList.add('on')}};
+  ['pr-dur-base','pr-dur-jit'].forEach(id=>$(id).oninput=function(){
+    const p=gp();$('pv-dur-base').textContent=p.base.toFixed(1)+'s';$('pv-dur-jit').textContent=p.jit.toFixed(1)+'s';
+    hist=new Array(50).fill(0);n=0;sum=0;
+  });
+}
+
+// --- Distribution strategies ---
+function mkDist(key,cid,cfg){
+  const v=new DistViz(cid,cfg);vizzes[key]=v;
+  const tlEl=$('tl-'+key),tllEl=$('tll-'+key);
+  cfg.onSample=(x,n,sum)=>{
+    $('sv-'+cfg.pre+'-last').textContent=fmt(x);
+    const tm=cfg.tMean(cfg.getP());
+    $('sv-'+cfg.pre+'-tmean').textContent=tm===null?'undefined':fmt(tm);
+    $('sv-'+cfg.pre+'-emean').textContent=n?fmt(sum/n):'—';
+    $('sv-'+cfg.pre+'-n').textContent=n;
+    const xm=cfg.xMax(cfg.getP());
+    tllEl.textContent=fmt(xm);
+    animTL(tlEl,Math.min(1,x/xm),1.5);
+  };
+  $('btn-'+cfg.bpre).onclick=()=>v.sample();
+  $('abt-'+cfg.bpre).onclick=function(){if(v.isAuto){v.stopAuto();this.classList.remove('on')}else{v.startAuto();this.classList.add('on')}};
+  if(cfg.sliders){cfg.sliders.forEach(s=>{$(s.id).oninput=function(){$(s.vId).textContent=s.fmt(+this.value);v.reset()}})}
+  return v;
+}
+
+function initDistributions(){
+  // Uniform
+  mkDist('uniform','cv-uniform',{
+    pre:'uni',bpre:'uni',
+    getP:()=>({mn:+$('pr-uni-min').value,mx:+$('pr-uni-max').value}),
+    pdf:(x,p)=>pUniform(x,Math.min(p.mn,p.mx),Math.max(p.mn,p.mx)),
+    samp:p=>sUniform(Math.min(p.mn,p.mx),Math.max(p.mn,p.mx)),
+    xMax:p=>Math.max(p.mn,p.mx)+2,
+    tMean:p=>(p.mn+p.mx)/2,
+    sliders:[{id:'pr-uni-min',vId:'pv-uni-min',fmt:v=>v.toFixed(1)+'s'},{id:'pr-uni-max',vId:'pv-uni-max',fmt:v=>v.toFixed(1)+'s'}]
+  });
+  // Normal
+  mkDist('normal','cv-normal',{
+    pre:'nor',bpre:'nor',
+    getP:()=>({m:+$('pr-nor-mean').value,s:+$('pr-nor-sd').value}),
+    pdf:(x,p)=>pNormal(x,p.m,p.s),
+    samp:p=>sNormal(p.m,p.s),
+    xMax:p=>Math.max(p.m+4*p.s,5),
+    tMean:p=>p.m,
+    sliders:[{id:'pr-nor-mean',vId:'pv-nor-mean',fmt:v=>v.toFixed(1)+'s'},{id:'pr-nor-sd',vId:'pv-nor-sd',fmt:v=>v.toFixed(1)}]
+  });
+  // Exponential
+  mkDist('exponential','cv-exponential',{
+    pre:'exp',bpre:'exp',
+    getP:()=>({l:+$('pr-exp-lam').value}),
+    pdf:(x,p)=>pExp(x,p.l),
+    samp:p=>sExp(p.l),
+    xMax:p=>Math.max(5/p.l,5),
+    tMean:p=>1/p.l,
+    sliders:[{id:'pr-exp-lam',vId:'pv-exp-lam',fmt:v=>v.toFixed(2)}]
+  });
+  // LogNormal
+  mkDist('lognormal','cv-lognormal',{
+    pre:'ln',bpre:'ln',
+    getP:()=>({mu:+$('pr-ln-mu').value,sig:+$('pr-ln-sig').value}),
+    pdf:(x,p)=>pLogNormal(x,p.mu,p.sig),
+    samp:p=>sLogNormal(p.mu,p.sig),
+    xMax:p=>Math.max(Math.exp(p.mu+2*p.sig)*2,5),
+    tMean:p=>Math.exp(p.mu+p.sig*p.sig/2),
+    sliders:[{id:'pr-ln-mu',vId:'pv-ln-mu',fmt:v=>v.toFixed(1)},{id:'pr-ln-sig',vId:'pv-ln-sig',fmt:v=>v.toFixed(2)}]
+  });
+  // Pareto
+  mkDist('pareto','cv-pareto',{
+    pre:'par',bpre:'par',
+    getP:()=>({sc:+$('pr-par-sc').value,sh:+$('pr-par-sh').value}),
+    pdf:(x,p)=>pPareto(x,p.sc,p.sh),
+    samp:p=>sPareto(p.sc,p.sh),
+    xMax:p=>p.sc*Math.max(6,2+8/p.sh),
+    tMean:p=>p.sh>1?p.sh*p.sc/(p.sh-1):null,
+    sliders:[{id:'pr-par-sc',vId:'pv-par-sc',fmt:v=>v.toFixed(1)},{id:'pr-par-sh',vId:'pv-par-sh',fmt:v=>v.toFixed(1)}]
+  });
+  // Triangular
+  mkDist('triangular','cv-triangular',{
+    pre:'tri',bpre:'tri',
+    getP:()=>{let a=+$('pr-tri-min').value,b=+$('pr-tri-max').value,c=+$('pr-tri-mode').value;if(b<=a)b=a+1;c=Math.max(a,Math.min(b,c));return{a,b,c}},
+    pdf:(x,p)=>pTriangular(x,p.a,p.b,p.c),
+    samp:p=>sTriangular(p.a,p.b,p.c),
+    xMax:p=>p.b+2,
+    tMean:p=>(p.a+p.b+p.c)/3,
+    sliders:[{id:'pr-tri-min',vId:'pv-tri-min',fmt:v=>v.toFixed(1)+'s'},{id:'pr-tri-max',vId:'pv-tri-max',fmt:v=>v.toFixed(1)+'s'},{id:'pr-tri-mode',vId:'pv-tri-mode',fmt:v=>v.toFixed(1)+'s'}]
+  });
+  // Gamma
+  mkDist('gamma','cv-gamma',{
+    pre:'gam',bpre:'gam',
+    getP:()=>({k:+$('pr-gam-sh').value,th:+$('pr-gam-sc').value}),
+    pdf:(x,p)=>pGamma(x,p.k,p.th),
+    samp:p=>sGamma(p.k,p.th),
+    xMax:p=>Math.max(p.k*p.th+4*Math.sqrt(p.k)*p.th,5),
+    tMean:p=>p.k*p.th,
+    sliders:[{id:'pr-gam-sh',vId:'pv-gam-sh',fmt:v=>v.toFixed(1)},{id:'pr-gam-sc',vId:'pv-gam-sc',fmt:v=>v.toFixed(1)}]
+  });
+}
+
+// --- Align ---
+function mkAlign(){
+  const cv=$('cv-align'),ctx=cv.getContext('2d');
+  const dpr=window.devicePixelRatio||1,r=cv.getBoundingClientRect();
+  cv.width=r.width*dpr;cv.height=(r.height||260)*dpr;
+  cv.style.width=r.width+'px';cv.style.height=(r.height||260)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const W=r.width,H=r.height||260;
+  let lastCalc=null;
+  function draw(ts){
+    ctx.clearRect(0,0,W,H);
+    const intv=+$('pr-ali-int').value;
+    const now=Date.now()/1000;
+    const pos=now%intv;
+    const wait=intv-pos;
+    const PL=45,PR=15,PT=30,PB=40,pW=W-PL-PR,pH=H-PT-PB;
+    // Draw two full intervals
+    const totalSpan=intv*2;
+    const x2c=x=>PL+(x/totalSpan)*pW;
+    // Grid lines at interval boundaries
+    ctx.strokeStyle='rgba(0,212,255,.3)';ctx.lineWidth=2;ctx.setLineDash([]);
+    for(let i=0;i<=2;i++){const x=x2c(i*intv);ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,PT+pH);ctx.stroke()}
+    // Fill passed region
+    ctx.fillStyle='rgba(0,212,255,.08)';
+    ctx.fillRect(x2c(0),PT,x2c(pos)-x2c(0),pH);
+    // Wait region
+    ctx.fillStyle='rgba(176,112,255,.15)';
+    ctx.fillRect(x2c(pos),PT,x2c(intv)-x2c(pos),pH);
+    // Labels
+    ctx.font='12px monospace';ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,212,255,.7)';
+    ctx.fillText('elapsed: '+pos.toFixed(1)+'s',(x2c(0)+x2c(pos))/2,PT+pH/2-8);
+    ctx.fillStyle='rgba(176,112,255,.7)';
+    ctx.fillText('wait: '+wait.toFixed(1)+'s',(x2c(pos)+x2c(intv))/2,PT+pH/2+12);
+    // Current position marker
+    const cx=x2c(pos);
+    ctx.fillStyle='#ff7040';
+    ctx.beginPath();ctx.moveTo(cx,PT-8);ctx.lineTo(cx-6,PT-18);ctx.lineTo(cx+6,PT-18);ctx.fill();
+    ctx.beginPath();ctx.arc(cx,PT+pH/2,6,0,Math.PI*2);ctx.fill();
+    // X-axis labels
+    ctx.fillStyle='rgba(100,100,160,.8)';ctx.font='11px monospace';ctx.textAlign='center';
+    for(let i=0;i<=2;i++){ctx.fillText(i===0?'boundary':(i*intv)+'s',x2c(i*intv),PT+pH+22)}
+    ctx.fillText('position: '+pos.toFixed(1)+'s',cx,PT+pH+35);
+    // Axis
+    ctx.beginPath();ctx.moveTo(PL,PT+pH);ctx.lineTo(PL+pW,PT+pH);ctx.strokeStyle='rgba(100,100,160,.3)';ctx.lineWidth=1;ctx.stroke();
+    // Update stats
+    $('sv-ali-pos').textContent=pos.toFixed(2)+'s';
+    $('sv-ali-wait').textContent=wait.toFixed(2)+'s';
+    $('sv-ali-int').textContent=intv+'s';
+    $('tll-align').textContent=wait.toFixed(1)+'s / '+intv+'s';
+    $('tl-align').style.width=(wait/intv*100)+'%';
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+  $('pr-ali-int').oninput=function(){$('pv-ali-int').textContent=this.value+'s'};
+  $('btn-ali').onclick=()=>{};
+}
+
+// --- Probabilistic ---
+function mkProb(){
+  const cv=$('cv-probabilistic'),ctx=cv.getContext('2d');
+  const dpr=window.devicePixelRatio||1,r=cv.getBoundingClientRect();
+  cv.width=r.width*dpr;cv.height=(r.height||260)*dpr;
+  cv.style.width=r.width+'px';cv.style.height=(r.height||260)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const W=r.width,H=r.height||260;
+  let hits=0,trials=0,lastRoll=null,lastHit=null,history=[];
+  let needleAngle=0,targetAngle=0;
+  function draw(ts){
+    ctx.clearRect(0,0,W,H);
+    const prob=+$('pr-prob-p').value;
+    const cx=W/2,cy=H*0.52,rad=Math.min(W/2-30,H*.42);
+    // Gauge arc
+    ctx.lineWidth=18;
+    // Background arc
+    ctx.beginPath();ctx.arc(cx,cy,rad,-Math.PI,0);
+    ctx.strokeStyle='rgba(255,255,255,.06)';ctx.stroke();
+    // Hit region (green)
+    const hitAngle=-Math.PI+Math.PI*prob;
+    ctx.beginPath();ctx.arc(cx,cy,rad,-Math.PI,hitAngle);
+    ctx.strokeStyle='rgba(0,232,122,.35)';ctx.stroke();
+    // Miss region (red)
+    ctx.beginPath();ctx.arc(cx,cy,rad,hitAngle,0);
+    ctx.strokeStyle='rgba(255,48,96,.25)';ctx.stroke();
+    // Labels
+    ctx.font='13px monospace';ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,232,122,.8)';
+    ctx.fillText('SLEEP (p='+prob.toFixed(2)+')',cx-rad*.4,cy-rad*.3);
+    ctx.fillStyle='rgba(255,48,96,.7)';
+    ctx.fillText('SKIP',cx+rad*.45,cy-rad*.3);
+    // Needle (animate towards target)
+    needleAngle+=(targetAngle-needleAngle)*.08;
+    const na=needleAngle;
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(na);
+    ctx.beginPath();ctx.moveTo(0,-4);ctx.lineTo(rad-10,0);ctx.lineTo(0,4);ctx.closePath();
+    ctx.fillStyle='rgba(255,112,64,.9)';ctx.fill();
+    ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.fillStyle='#ff7040';ctx.fill();
+    ctx.restore();
+    // Center text
+    ctx.font='bold 18px monospace';ctx.textAlign='center';
+    if(lastRoll!==null){
+      ctx.fillStyle=lastHit?'#00e87a':'#ff3060';
+      ctx.fillText(lastHit?'SLEEP '+fmt(+$('pr-prob-d').value):'SKIP (roll='+lastRoll.toFixed(3)+')',cx,cy+30);
+    }else{
+      ctx.fillStyle='rgba(100,100,160,.5)';ctx.fillText('Click Roll to start',cx,cy+30);
+    }
+    // History dots
+    const dotSize=8,dotGap=3,maxDots=Math.floor((W-60)/(dotSize+dotGap));
+    const shown=history.slice(-maxDots);
+    const startX=cx-(shown.length*(dotSize+dotGap))/2;
+    for(let i=0;i<shown.length;i++){
+      ctx.beginPath();ctx.arc(startX+i*(dotSize+dotGap)+dotSize/2,cy+55,dotSize/2,0,Math.PI*2);
+      ctx.fillStyle=shown[i]?'rgba(0,232,122,.7)':'rgba(255,48,96,.6)';ctx.fill();
+    }
+    if(shown.length){{ctx.font='10px monospace';ctx.fillStyle='rgba(100,100,160,.6)';ctx.fillText('trial history (last '+shown.length+')',cx,cy+72)}}
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+  function doRoll(){
+    const prob=+$('pr-prob-p').value,dur=+$('pr-prob-d').value;
+    const roll=Math.random();
+    const hit=roll<=prob;
+    lastRoll=roll;lastHit=hit;
+    trials++;if(hit)hits++;
+    history.push(hit);if(history.length>100)history.shift();
+    targetAngle=-Math.PI+Math.PI*roll;
+    $('sv-prob-roll').textContent=roll.toFixed(4);
+    $('sv-prob-res').textContent=hit?'SLEEP '+fmt(dur):'SKIP';
+    $('sv-prob-res').style.color=hit?'var(--gn)':'var(--rd)';
+    $('sv-prob-rate').textContent=(hits/trials*100).toFixed(1)+'%';
+    $('sv-prob-ht').textContent=hits+' / '+trials;
+    $('tll-prob').textContent='roll='+roll.toFixed(3)+' '+(hit?'<= '+prob.toFixed(2):'> '+prob.toFixed(2));
+    $('tl-prob').style.width=(hit?100:0)+'%';
+    $('tl-prob').style.background=hit?'linear-gradient(90deg,var(--gn),var(--cy))':'linear-gradient(90deg,var(--rd),var(--or))';
+  }
+  $('btn-prob').onclick=doRoll;
+  let aui=null;
+  $('abt-prob').onclick=function(){if(aui){clearInterval(aui);aui=null;this.classList.remove('on')}else{aui=setInterval(doRoll,700);this.classList.add('on')}};
+  $('pr-prob-p').oninput=function(){$('pv-prob-p').textContent=(+this.value).toFixed(2);hits=0;trials=0;history=[]};
+  $('pr-prob-d').oninput=function(){$('pv-prob-d').textContent=(+this.value).toFixed(1)+'s'};
+}
+
+// ====== NAVIGATION ======
+document.querySelectorAll('.nb').forEach(btn=>{
+  btn.onclick=function(){
+    document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
+    this.classList.add('active');
+    $('s-'+this.dataset.s).classList.add('active');
+    // Resize canvases on switch
+    const cv=$('cv-'+this.dataset.s);
+    if(cv){
+      const dpr=window.devicePixelRatio||1,r=cv.getBoundingClientRect();
+      if(r.width>0){cv.width=r.width*dpr;cv.height=(r.height||260)*dpr;cv.style.width=r.width+'px';cv.style.height=(r.height||260)+'px';cv.getContext('2d').setTransform(dpr,0,0,dpr,0,0)}
+      if(vizzes[this.dataset.s])vizzes[this.dataset.s]._resize();
+    }
+  }
+});
+
+// ====== INIT ======
+mkDuration();
+initDistributions();
+mkAlign();
+mkProb();
+</script>
+</body>
+</html>
