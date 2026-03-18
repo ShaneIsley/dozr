@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dozr — Distribution Visualiser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary:    #0a0e17;
+      --bg-secondary:  #111827;
+      --bg-tertiary:   #1e293b;
+      --text-primary:  #e2e8f0;
+      --text-secondary:#94a3b8;
+      --accent-cyan:   #22d3ee;
+      --accent-amber:  #f59e0b;
+      --accent-emerald:#34d399;
+      --accent-rose:   #fb7185;
+      --accent-violet: #a78bfa;
+      --border-subtle: #1e293b;
+      --border-focus:  #22d3ee33;
+      --font-display:  'Inter', system-ui, sans-serif;
+      --font-mono:     'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-display);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+
+    .page-wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Header ── */
+    header {
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 20px 0;
+      margin-bottom: 32px;
+    }
+    .header-inner {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .repo-name {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+    .repo-name:hover { text-decoration: underline; }
+    .header-desc { color: var(--text-secondary); font-size: 14px; flex: 1; }
+    .lang-badge {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 4px;
+      color: #dea584;
+      background: #2a1f1a;
+      border: 1px solid #dea58433;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .card-heading {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+
+    /* ── Distribution selector ── */
+    .dist-selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .dist-btn {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: border-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+    }
+    .dist-btn:hover {
+      border-color: var(--accent-cyan);
+      color: var(--text-primary);
+    }
+    .dist-btn.active {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+      box-shadow: 0 0 0 1px var(--border-focus);
+    }
+
+    /* ── Main grid ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Controls ── */
+    .controls-stack { display: flex; flex-direction: column; gap: 16px; }
+    .param-group { display: none; }
+    .param-group.active { display: block; }
+
+    .param-row { margin-bottom: 14px; }
+    .param-row:last-child { margin-bottom: 0; }
+    .param-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .param-name {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+    }
+    .param-val {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent-cyan);
+    }
+
+    /* ── Sliders ── */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: var(--bg-tertiary);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      cursor: pointer;
+      transition: transform 150ms ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      border: none;
+      cursor: pointer;
+    }
+    .jitter-track input[type="range"]::-webkit-slider-thumb { background: var(--accent-amber); }
+    .jitter-track input[type="range"]::-moz-range-thumb    { background: var(--accent-amber); }
+    .jitter-val { color: var(--accent-amber) !important; }
+
+    /* ── Canvases ── */
+    #pdf-canvas   { width: 100%; height: 220px; display: block; border-radius: 4px; }
+    #strip-canvas { width: 100%; height: 80px;  display: block; border-radius: 4px; }
+
+    /* ── Stats ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+    @media (max-width: 480px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+    .stat-cell {
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      padding: 10px 12px;
+      text-align: center;
+    }
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      display: block;
+      margin-bottom: 4px;
+    }
+    .stat-val {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--accent-emerald);
+    }
+
+    /* ── Action row ── */
+    .action-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 8px 20px;
+      border-radius: 5px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease;
+    }
+    .btn:hover { border-color: var(--accent-cyan); box-shadow: 0 0 0 1px var(--border-focus); }
+    .btn-primary { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+    .btn-primary:hover { background: #22d3ee14; }
+    .btn-danger  { border-color: var(--accent-rose); color: var(--accent-rose); }
+    .btn-danger:hover { background: #fb718514; box-shadow: 0 0 0 1px #fb718533; }
+    .speed-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+    .speed-wrap input[type="range"] { width: 100px; }
+    .speed-label {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .speed-val {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+      min-width: 2.5ch;
+    }
+
+    /* ── Spacing ── */
+    .gap-16 { margin-top: 16px; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 20px 0;
+      margin-top: 48px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    footer a { color: var(--text-secondary); text-decoration: none; }
+    footer a:hover { color: var(--accent-cyan); }
+
+    /* ── Entry animations ── */
+    .fade-in { animation: fadeUp 300ms ease both; }
+    .fade-in:nth-child(1) { animation-delay:   0ms; }
+    .fade-in:nth-child(2) { animation-delay:  50ms; }
+    .fade-in:nth-child(3) { animation-delay: 100ms; }
+    .fade-in:nth-child(4) { animation-delay: 150ms; }
+    .fade-in:nth-child(5) { animation-delay: 200ms; }
+    .fade-in:nth-child(6) { animation-delay: 250ms; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 480px) {
+      body { font-size: 14px; }
+      .card { padding: 18px; }
+      .page-wrap { padding: 0 16px; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <header>
+    <div class="header-inner">
+      <a href="https://github.com/ShaneIsley/dozr" class="repo-name">dozr</a>
+      <span class="header-desc">Statistical sleep utility — distribution visualiser</span>
+      <span class="lang-badge">Rust</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Distribution selector -->
+    <div class="dist-selector fade-in" id="dist-selector">
+      <button class="dist-btn active" data-dist="normal">Normal</button>
+      <button class="dist-btn" data-dist="exponential">Exponential</button>
+      <button class="dist-btn" data-dist="lognormal">Log-Normal</button>
+      <button class="dist-btn" data-dist="pareto">Pareto</button>
+      <button class="dist-btn" data-dist="uniform">Uniform</button>
+      <button class="dist-btn" data-dist="triangular">Triangular</button>
+      <button class="dist-btn" data-dist="gamma">Gamma</button>
+    </div>
+
+    <!-- Main grid: controls | PDF canvas -->
+    <div class="main-grid fade-in">
+
+      <!-- Left: parameter controls -->
+      <div class="controls-stack">
+        <div class="card">
+          <div class="card-heading">Parameters</div>
+
+          <!-- Normal -->
+          <div class="param-group active" id="params-normal">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">mean (s)</span>
+                <span class="param-val" id="v-normal-mean">1.00</span>
+              </div>
+              <input type="range" id="normal-mean" min="0.1" max="10" step="0.05" value="1">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">std_dev (s)</span>
+                <span class="param-val" id="v-normal-std">0.20</span>
+              </div>
+              <input type="range" id="normal-std" min="0.01" max="3" step="0.01" value="0.2">
+            </div>
+          </div>
+
+          <!-- Exponential -->
+          <div class="param-group" id="params-exponential">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">rate λ</span>
+                <span class="param-val" id="v-exp-lambda">1.00</span>
+              </div>
+              <input type="range" id="exp-lambda" min="0.1" max="10" step="0.05" value="1">
+            </div>
+            <div style="margin-top:10px; font-size:12px; color:var(--text-secondary); line-height:1.5">
+              Mean = 1/λ &nbsp;·&nbsp; <span id="exp-mean-hint">1.00s</span>
+            </div>
+          </div>
+
+          <!-- Log-Normal -->
+          <div class="param-group" id="params-lognormal">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">mean (s)</span>
+                <span class="param-val" id="v-ln-mean">1.00</span>
+              </div>
+              <input type="range" id="ln-mean" min="0.1" max="10" step="0.05" value="1">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">std_dev (s)</span>
+                <span class="param-val" id="v-ln-std">0.50</span>
+              </div>
+              <input type="range" id="ln-std" min="0.01" max="5" step="0.01" value="0.5">
+            </div>
+          </div>
+
+          <!-- Pareto -->
+          <div class="param-group" id="params-pareto">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">scale x_m (s)</span>
+                <span class="param-val" id="v-pareto-scale">1.00</span>
+              </div>
+              <input type="range" id="pareto-scale" min="0.1" max="5" step="0.05" value="1">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">shape α</span>
+                <span class="param-val" id="v-pareto-shape">2.00</span>
+              </div>
+              <input type="range" id="pareto-shape" min="1.05" max="10" step="0.05" value="2">
+            </div>
+            <div style="margin-top:10px; font-size:12px; color:var(--text-secondary); line-height:1.5">
+              Heavy tail: α controls decay rate
+            </div>
+          </div>
+
+          <!-- Uniform -->
+          <div class="param-group" id="params-uniform">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">min (s)</span>
+                <span class="param-val" id="v-uni-min">0.50</span>
+              </div>
+              <input type="range" id="uni-min" min="0" max="9.9" step="0.05" value="0.5">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">max (s)</span>
+                <span class="param-val" id="v-uni-max">3.00</span>
+              </div>
+              <input type="range" id="uni-max" min="0.1" max="10" step="0.05" value="3">
+            </div>
+          </div>
+
+          <!-- Triangular -->
+          <div class="param-group" id="params-triangular">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">min (s)</span>
+                <span class="param-val" id="v-tri-min">0.50</span>
+              </div>
+              <input type="range" id="tri-min" min="0" max="9" step="0.05" value="0.5">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">mode (s)</span>
+                <span class="param-val" id="v-tri-mode">1.50</span>
+              </div>
+              <input type="range" id="tri-mode" min="0.05" max="9.9" step="0.05" value="1.5">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">max (s)</span>
+                <span class="param-val" id="v-tri-max">4.00</span>
+              </div>
+              <input type="range" id="tri-max" min="0.1" max="10" step="0.05" value="4">
+            </div>
+          </div>
+
+          <!-- Gamma -->
+          <div class="param-group" id="params-gamma">
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">shape k</span>
+                <span class="param-val" id="v-gamma-shape">2.00</span>
+              </div>
+              <input type="range" id="gamma-shape" min="0.1" max="10" step="0.05" value="2">
+            </div>
+            <div class="param-row">
+              <div class="param-label">
+                <span class="param-name">scale θ (s)</span>
+                <span class="param-val" id="v-gamma-scale">0.50</span>
+              </div>
+              <input type="range" id="gamma-scale" min="0.05" max="5" step="0.05" value="0.5">
+            </div>
+            <div style="margin-top:10px; font-size:12px; color:var(--text-secondary); line-height:1.5">
+              Mean = k·θ &nbsp;·&nbsp; <span id="gamma-mean-hint">1.00s</span>
+            </div>
+          </div>
+        </div><!-- /card -->
+
+        <!-- Jitter -->
+        <div class="card jitter-track">
+          <div class="card-heading">Jitter</div>
+          <div class="param-row">
+            <div class="param-label">
+              <span class="param-name">max jitter</span>
+              <span class="param-val jitter-val" id="v-jitter">0%</span>
+            </div>
+            <input type="range" id="jitter" min="0" max="100" step="1" value="0">
+          </div>
+          <div style="font-size:12px; color:var(--text-secondary); margin-top:8px; line-height:1.5">
+            Uniform offset added to each sample — mirrors <code style="font-family:var(--font-mono); color:var(--accent-cyan)">--jitter</code> flag.
+          </div>
+        </div>
+      </div><!-- /controls-stack -->
+
+      <!-- Right: PDF canvas -->
+      <div class="card" style="padding: 16px;">
+        <div class="card-heading">Probability Density</div>
+        <canvas id="pdf-canvas"></canvas>
+      </div>
+
+    </div><!-- /main-grid -->
+
+    <!-- Sample strip -->
+    <div class="card gap-16 fade-in" style="padding: 16px;">
+      <div class="card-heading">Sample Timeline</div>
+      <canvas id="strip-canvas"></canvas>
+    </div>
+
+    <!-- Stats -->
+    <div class="card gap-16 fade-in">
+      <div class="card-heading">Live Statistics</div>
+      <div class="stats-grid">
+        <div class="stat-cell">
+          <span class="stat-label">Count</span>
+          <span class="stat-val" id="stat-count">0</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Mean</span>
+          <span class="stat-val" id="stat-mean">—</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Std Dev</span>
+          <span class="stat-val" id="stat-std">—</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Min</span>
+          <span class="stat-val" id="stat-min">—</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Max</span>
+          <span class="stat-val" id="stat-max">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card gap-16 fade-in" style="padding: 16px 24px;">
+      <div class="action-row">
+        <button class="btn btn-primary" id="btn-sample">&#9654; Sample</button>
+        <button class="btn btn-danger"  id="btn-clear">&#10005; Clear</button>
+        <div class="speed-wrap">
+          <span class="speed-label">Speed</span>
+          <input type="range" id="speed" min="1" max="20" step="1" value="5">
+          <span class="speed-val" id="v-speed">5×</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer>
+    <span>Part of <a href="https://github.com/ShaneIsley">Shane Isley</a>'s project portfolio</span>
+    <a href="https://github.com/ShaneIsley/dozr">github.com/ShaneIsley/dozr</a>
+    <a href="deep-dive.md">Deep-dive walkthrough</a>
+  </footer>
+
+</div><!-- /page-wrap -->
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Math helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function randn() {
+  // Box-Muller transform
+  let u, v;
+  do { u = Math.random(); } while (u === 0);
+  do { v = Math.random(); } while (v === 0);
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Natural log of Gamma function (Lanczos approximation)
+function lngamma(z) {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+  ];
+  if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lngamma(1 - z);
+  z -= 1;
+  let x = c[0];
+  for (let i = 1; i < g + 2; i++) x += c[i] / (z + i);
+  const t = z + g + 0.5;
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+}
+
+// Gamma sampler — Marsaglia-Tsang (2000)
+function sampleGamma(shape, scale) {
+  if (shape < 1) {
+    // Boost trick for shape < 1
+    return sampleGamma(shape + 1, scale) * Math.pow(Math.random(), 1 / shape);
+  }
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x, v;
+    do { x = randn(); v = 1 + c * x; } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v * scale;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v * scale;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Distribution definitions
+// Each entry: params(), pdf(x,p), sample(p), xRange(p)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DISTS = {
+
+  normal: {
+    params() {
+      return {
+        mean: +document.getElementById('normal-mean').value,
+        std:  +document.getElementById('normal-std').value,
+      };
+    },
+    pdf(x, p) {
+      const z = (x - p.mean) / p.std;
+      return Math.exp(-0.5 * z * z) / (p.std * Math.sqrt(2 * Math.PI));
+    },
+    sample(p) { return Math.max(0, p.mean + p.std * randn()); },
+    xRange(p) { return [Math.max(0, p.mean - 4 * p.std), p.mean + 4 * p.std]; },
+  },
+
+  exponential: {
+    params() { return { lambda: +document.getElementById('exp-lambda').value }; },
+    pdf(x, p) { return x < 0 ? 0 : p.lambda * Math.exp(-p.lambda * x); },
+    sample(p) { return -Math.log(1 - Math.random()) / p.lambda; },
+    xRange(p) { return [0, 6 / p.lambda]; },
+  },
+
+  lognormal: {
+    params() {
+      return {
+        mean: +document.getElementById('ln-mean').value,
+        std:  +document.getElementById('ln-std').value,
+      };
+    },
+    // Convert user-facing (mean, std) to log-space (mu, sigma)
+    _logParams(p) {
+      const v = p.std * p.std, m2 = p.mean * p.mean;
+      const sigma2 = Math.log(1 + v / m2);
+      return { mu: Math.log(p.mean) - sigma2 / 2, sigma: Math.sqrt(sigma2) };
+    },
+    pdf(x, p) {
+      if (x <= 0) return 0;
+      const { mu, sigma } = this._logParams(p);
+      const z = (Math.log(x) - mu) / sigma;
+      return Math.exp(-0.5 * z * z) / (x * sigma * Math.sqrt(2 * Math.PI));
+    },
+    sample(p) {
+      const { mu, sigma } = this._logParams(p);
+      return Math.exp(mu + sigma * randn());
+    },
+    xRange(p) {
+      const { mu, sigma } = this._logParams(p);
+      return [0, Math.exp(mu + 3.5 * sigma)];
+    },
+  },
+
+  pareto: {
+    params() {
+      return {
+        scale: +document.getElementById('pareto-scale').value,
+        shape: +document.getElementById('pareto-shape').value,
+      };
+    },
+    pdf(x, p) {
+      if (x < p.scale) return 0;
+      return (p.shape * Math.pow(p.scale, p.shape)) / Math.pow(x, p.shape + 1);
+    },
+    sample(p) { return p.scale / Math.pow(Math.random(), 1 / p.shape); },
+    xRange(p) {
+      const tail = p.shape > 1 ? 6 / (p.shape - 1) : 8;
+      return [0, p.scale * (1 + tail)];
+    },
+  },
+
+  uniform: {
+    params() {
+      let mn = +document.getElementById('uni-min').value;
+      let mx = +document.getElementById('uni-max').value;
+      if (mx <= mn) mx = mn + 0.1;
+      return { min: mn, max: mx };
+    },
+    pdf(x, p) { return (x >= p.min && x <= p.max) ? 1 / (p.max - p.min) : 0; },
+    sample(p)  { return p.min + Math.random() * (p.max - p.min); },
+    xRange(p)  {
+      const w = p.max - p.min;
+      return [Math.max(0, p.min - w * 0.25), p.max + w * 0.25];
+    },
+  },
+
+  triangular: {
+    params() {
+      let mn   = +document.getElementById('tri-min').value;
+      let mode = +document.getElementById('tri-mode').value;
+      let mx   = +document.getElementById('tri-max').value;
+      if (mx <= mn) mx = mn + 0.01;
+      mode = Math.min(Math.max(mode, mn), mx);
+      return { min: mn, mode, max: mx };
+    },
+    pdf(x, p) {
+      const { min: a, mode: c, max: b } = p;
+      if (x < a || x > b) return 0;
+      if (x < c) return 2 * (x - a) / ((b - a) * (c - a + 1e-12));
+      if (x === c) return 2 / (b - a);
+      return 2 * (b - x) / ((b - a) * (b - c + 1e-12));
+    },
+    sample(p) {
+      const { min: a, mode: c, max: b } = p;
+      const u = Math.random();
+      const fc = (c - a) / (b - a);
+      if (u < fc) return a + Math.sqrt(u * (b - a) * (c - a));
+      return b - Math.sqrt((1 - u) * (b - a) * (b - c));
+    },
+    xRange(p) {
+      const pad = (p.max - p.min) * 0.1;
+      return [Math.max(0, p.min - pad), p.max + pad];
+    },
+  },
+
+  gamma: {
+    params() {
+      return {
+        shape: +document.getElementById('gamma-shape').value,
+        scale: +document.getElementById('gamma-scale').value,
+      };
+    },
+    pdf(x, p) {
+      if (x <= 0) return 0;
+      const { shape: k, scale: theta } = p;
+      return Math.exp(
+        (k - 1) * Math.log(x) - x / theta - k * Math.log(theta) - lngamma(k)
+      );
+    },
+    sample(p) { return sampleGamma(p.shape, p.scale); },
+    xRange(p) {
+      const mean = p.shape * p.scale;
+      const std  = Math.sqrt(p.shape) * p.scale;
+      return [0, mean + 4 * std];
+    },
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+
+let currentDist = 'normal';
+let samples     = [];
+let animFrame   = null;
+let sampling    = false;
+const dpr       = window.devicePixelRatio || 1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canvas setup
+// ─────────────────────────────────────────────────────────────────────────────
+
+const pdfCanvas   = document.getElementById('pdf-canvas');
+const pdfCtx      = pdfCanvas.getContext('2d');
+const stripCanvas = document.getElementById('strip-canvas');
+const stripCtx    = stripCanvas.getContext('2d');
+
+function resizeCanvas(el) {
+  const r = el.getBoundingClientRect();
+  el.width  = Math.round(r.width  * dpr);
+  el.height = Math.round(r.height * dpr);
+}
+
+function initCanvases() {
+  resizeCanvas(pdfCanvas);
+  resizeCanvas(stripCanvas);
+  redrawAll();
+}
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(initCanvases, 100);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF drawing
+// ─────────────────────────────────────────────────────────────────────────────
+
+function drawPDF() {
+  const W = pdfCanvas.width, H = pdfCanvas.height;
+  const ctx = pdfCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  const dist = DISTS[currentDist];
+  const p    = dist.params();
+  const [xMin, xMax] = dist.xRange(p);
+  const range = Math.max(xMax - xMin, 1e-6);
+
+  const PAD = { l: 8*dpr, r: 8*dpr, t: 12*dpr, b: 28*dpr };
+  const plotW = W - PAD.l - PAD.r;
+  const plotH = H - PAD.t - PAD.b;
+  const N     = Math.max(400, Math.round(plotW));
+
+  // Evaluate PDF across range
+  const ys = new Float64Array(N + 1);
+  for (let i = 0; i <= N; i++) {
+    const x = xMin + (i / N) * range;
+    ys[i] = dist.pdf(x, p);
+  }
+  let maxY = 0;
+  for (let i = 0; i <= N; i++) if (ys[i] > maxY) maxY = ys[i];
+  if (maxY < 1e-12) maxY = 1;
+
+  // Subtle grid
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = dpr;
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD.t + (i / 4) * plotH;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+  }
+
+  // Fill under curve
+  const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + plotH);
+  grad.addColorStop(0, 'rgba(34,211,238,0.18)');
+  grad.addColorStop(1, 'rgba(34,211,238,0.02)');
+
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const cx = PAD.l + (i / N) * plotW;
+    const cy = PAD.t + plotH - (ys[i] / maxY) * plotH;
+    i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+  }
+  ctx.lineTo(PAD.l + plotW, PAD.t + plotH);
+  ctx.lineTo(PAD.l,         PAD.t + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Curve line
+  ctx.beginPath();
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth   = 2 * dpr;
+  ctx.lineJoin    = 'round';
+  for (let i = 0; i <= N; i++) {
+    const cx = PAD.l + (i / N) * plotW;
+    const cy = PAD.t + plotH - (ys[i] / maxY) * plotH;
+    i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+
+  // Sample ticks along x-axis of PDF
+  if (samples.length > 0) {
+    const shown = samples.slice(-300);
+    ctx.fillStyle = 'rgba(245,158,11,0.55)';
+    for (const s of shown) {
+      const cx = PAD.l + ((s - xMin) / range) * plotW;
+      if (cx < PAD.l - 1 || cx > W - PAD.r + 1) continue;
+      ctx.fillRect(cx - 0.5 * dpr, PAD.t + plotH + 1, dpr, 4 * dpr);
+    }
+  }
+
+  // X-axis labels
+  ctx.fillStyle  = '#94a3b8';
+  ctx.font       = `${10 * dpr}px JetBrains Mono, monospace`;
+  ctx.textAlign  = 'center';
+  ctx.textBaseline = 'bottom';
+  for (let i = 0; i <= 4; i++) {
+    const x  = xMin + (i / 4) * range;
+    const cx = PAD.l + (i / 4) * plotW;
+    ctx.fillText(x.toFixed(x < 10 ? 2 : 1) + 's', cx, H - 2);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Strip drawing
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Cached per-dot y-jitter so dots don't jump on redraw
+let dotJitter = [];
+
+function drawStrip() {
+  const W = stripCanvas.width, H = stripCanvas.height;
+  const ctx = stripCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  const dist = DISTS[currentDist];
+  const p    = dist.params();
+  const [xMin, xMax] = dist.xRange(p);
+  const range = Math.max(xMax - xMin, 1e-6);
+
+  const PAD   = { l: 8*dpr, r: 8*dpr, t: 8*dpr, b: 20*dpr };
+  const plotW = W - PAD.l - PAD.r;
+  const plotH = H - PAD.t - PAD.b;
+  const midY  = PAD.t + plotH / 2;
+
+  // Baseline
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth   = dpr;
+  ctx.beginPath(); ctx.moveTo(PAD.l, midY); ctx.lineTo(W - PAD.r, midY); ctx.stroke();
+
+  // X labels + tick marks
+  ctx.fillStyle    = '#94a3b8';
+  ctx.font         = `${10 * dpr}px JetBrains Mono, monospace`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  for (let i = 0; i <= 4; i++) {
+    const x  = xMin + (i / 4) * range;
+    const cx = PAD.l + (i / 4) * plotW;
+    ctx.fillText(x.toFixed(x < 10 ? 1 : 0) + 's', cx, H - 1);
+    ctx.strokeStyle = '#1e293b';
+    ctx.beginPath(); ctx.moveTo(cx, midY - 4*dpr); ctx.lineTo(cx, midY + 4*dpr); ctx.stroke();
+  }
+
+  if (samples.length === 0) return;
+
+  // Ensure jitter cache is long enough
+  while (dotJitter.length < samples.length) {
+    dotJitter.push((Math.random() - 0.5) * plotH * 0.7);
+  }
+
+  // Density-based alpha
+  const BUCKETS = 100;
+  const density = new Float32Array(BUCKETS);
+  for (const s of samples) {
+    const idx = Math.min(BUCKETS - 1, Math.max(0, Math.floor(((s - xMin) / range) * BUCKETS)));
+    density[idx]++;
+  }
+  let maxDen = 0;
+  for (let i = 0; i < BUCKETS; i++) if (density[i] > maxDen) maxDen = density[i];
+
+  const r = 2.5 * dpr;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    const cx = PAD.l + ((s - xMin) / range) * plotW;
+    if (cx < PAD.l - r || cx > W - PAD.r + r) continue;
+    const bucketIdx = Math.min(BUCKETS - 1, Math.max(0, Math.floor(((s - xMin) / range) * BUCKETS)));
+    const den = density[bucketIdx] / maxDen;
+    const alpha = Math.max(0.15, 0.85 - den * 0.55);
+    ctx.fillStyle = `rgba(34,211,238,${alpha.toFixed(2)})`;
+    ctx.beginPath();
+    ctx.arc(cx, midY + dotJitter[i], r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stats
+// ─────────────────────────────────────────────────────────────────────────────
+
+function updateStats() {
+  const n = samples.length;
+  document.getElementById('stat-count').textContent = n;
+  if (n === 0) {
+    document.getElementById('stat-mean').textContent = '—';
+    document.getElementById('stat-std').textContent  = '—';
+    document.getElementById('stat-min').textContent  = '—';
+    document.getElementById('stat-max').textContent  = '—';
+    return;
+  }
+  let sum = 0, min = Infinity, max = -Infinity;
+  for (const s of samples) { sum += s; if (s < min) min = s; if (s > max) max = s; }
+  const mean = sum / n;
+  let sq = 0;
+  for (const s of samples) sq += (s - mean) ** 2;
+  const std = Math.sqrt(sq / n);
+  document.getElementById('stat-mean').textContent = mean.toFixed(3) + 's';
+  document.getElementById('stat-std').textContent  = std.toFixed(3)  + 's';
+  document.getElementById('stat-min').textContent  = min.toFixed(3)  + 's';
+  document.getElementById('stat-max').textContent  = max.toFixed(3)  + 's';
+}
+
+function redrawAll() { drawPDF(); drawStrip(); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Jitter helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+function applyJitter(val) {
+  const pct = +document.getElementById('jitter').value / 100;
+  if (pct === 0) return val;
+  return val + Math.random() * val * pct;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sampling loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+function samplingLoop() {
+  if (!sampling) return;
+  if (document.hidden) { animFrame = requestAnimationFrame(samplingLoop); return; }
+
+  const speed = +document.getElementById('speed').value;
+  const dist  = DISTS[currentDist];
+  const p     = dist.params();
+
+  for (let i = 0; i < speed; i++) {
+    samples.push(applyJitter(dist.sample(p)));
+  }
+
+  redrawAll();
+  updateStats();
+
+  if (samples.length >= 500) {
+    sampling = false;
+    document.getElementById('btn-sample').innerHTML = '&#9654; Sample';
+  } else {
+    animFrame = requestAnimationFrame(samplingLoop);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Derived-value hints
+// ─────────────────────────────────────────────────────────────────────────────
+
+function updateHints() {
+  // Exponential mean hint
+  const lam = +document.getElementById('exp-lambda').value;
+  const hint = document.getElementById('exp-mean-hint');
+  if (hint) hint.textContent = (1 / lam).toFixed(2) + 's';
+
+  // Gamma mean hint
+  const gShape = +document.getElementById('gamma-shape').value;
+  const gScale = +document.getElementById('gamma-scale').value;
+  const gh = document.getElementById('gamma-mean-hint');
+  if (gh) gh.textContent = (gShape * gScale).toFixed(2) + 's';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wire up controls
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Distribution selector
+document.getElementById('dist-selector').addEventListener('click', e => {
+  const btn = e.target.closest('.dist-btn');
+  if (!btn) return;
+  document.querySelectorAll('.dist-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentDist = btn.dataset.dist;
+  document.querySelectorAll('.param-group').forEach(g => g.classList.remove('active'));
+  document.getElementById('params-' + currentDist).classList.add('active');
+  // Reset on distribution change
+  if (sampling) {
+    sampling = false;
+    cancelAnimationFrame(animFrame);
+    document.getElementById('btn-sample').innerHTML = '&#9654; Sample';
+  }
+  samples = []; dotJitter = [];
+  updateStats();
+  updateHints();
+  redrawAll();
+});
+
+// All sliders: id -> display-value-id
+const SLIDER_MAP = {
+  'normal-mean':   'v-normal-mean',
+  'normal-std':    'v-normal-std',
+  'exp-lambda':    'v-exp-lambda',
+  'ln-mean':       'v-ln-mean',
+  'ln-std':        'v-ln-std',
+  'pareto-scale':  'v-pareto-scale',
+  'pareto-shape':  'v-pareto-shape',
+  'uni-min':       'v-uni-min',
+  'uni-max':       'v-uni-max',
+  'tri-min':       'v-tri-min',
+  'tri-mode':      'v-tri-mode',
+  'tri-max':       'v-tri-max',
+  'gamma-shape':   'v-gamma-shape',
+  'gamma-scale':   'v-gamma-scale',
+};
+
+Object.entries(SLIDER_MAP).forEach(([sliderId, valId]) => {
+  const el = document.getElementById(sliderId);
+  if (!el) return;
+  el.addEventListener('input', () => {
+    document.getElementById(valId).textContent = parseFloat(el.value).toFixed(2);
+    updateHints();
+    redrawAll();
+  });
+});
+
+// Jitter slider
+document.getElementById('jitter').addEventListener('input', function() {
+  document.getElementById('v-jitter').textContent = this.value + '%';
+  redrawAll();
+});
+
+// Speed slider
+document.getElementById('speed').addEventListener('input', function() {
+  document.getElementById('v-speed').textContent = this.value + '×';
+});
+
+// Sample / pause button
+document.getElementById('btn-sample').addEventListener('click', function() {
+  if (sampling) {
+    sampling = false;
+    cancelAnimationFrame(animFrame);
+    this.innerHTML = '&#9654; Sample';
+  } else {
+    // Re-enable sampling (reset if already at 500)
+    if (samples.length >= 500) {
+      samples = []; dotJitter = [];
+      updateStats();
+    }
+    sampling = true;
+    this.innerHTML = '&#9646;&#9646; Pause';
+    animFrame = requestAnimationFrame(samplingLoop);
+  }
+});
+
+// Clear button
+document.getElementById('btn-clear').addEventListener('click', () => {
+  sampling = false;
+  cancelAnimationFrame(animFrame);
+  document.getElementById('btn-sample').innerHTML = '&#9654; Sample';
+  samples = []; dotJitter = [];
+  updateStats();
+  redrawAll();
+});
+
+// Pause when tab is hidden, resume when visible
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    cancelAnimationFrame(animFrame);
+  } else if (sampling) {
+    animFrame = requestAnimationFrame(samplingLoop);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────────────────────────
+
+updateHints();
+// Defer canvas init until fonts load (prevents sub-pixel text on first paint)
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(initCanvases);
+} else {
+  initCanvases();
+}
+</script>
+</body>
+</html>
