@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dozr — Distribution Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<style>
+:root {
+  --bg: #FAFAF7;
+  --bg-inset: #F0EDE6;
+  --ink: #111111;
+  --ink-mid: #555555;
+  --ink-light: #888888;
+  --ink-ghost: rgba(17,17,17,0.18);
+  --border: #CCCCCC;
+  --border-heavy: #111111;
+  --fig-bg: #FFFFFF;
+  --font-body: 'IM Fell English', 'Times New Roman', Georgia, serif;
+  --font-math: 'KaTeX_Main', 'Times New Roman', serif;
+  --font-mono: 'Courier Prime', 'Courier New', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.75;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+a { color: var(--ink); }
+a:hover { color: var(--ink-mid); }
+
+/* Header */
+header {
+  padding-bottom: 16px;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 32px;
+}
+header .repo-name {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  text-decoration: none;
+  color: var(--ink);
+}
+header .desc {
+  color: var(--ink-mid);
+  font-style: italic;
+  font-size: 15px;
+  margin-top: 2px;
+}
+header .badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  padding: 3px 8px;
+  margin-top: 8px;
+}
+
+/* Figure container */
+.figure-wrap {
+  background: var(--fig-bg);
+  border: 0.5px solid var(--border);
+  padding: 16px;
+  margin-bottom: 8px;
+}
+.figure-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+figcaption {
+  text-align: center;
+  font-style: italic;
+  font-size: 0.82em;
+  color: var(--ink-mid);
+  margin-top: 8px;
+  margin-bottom: 32px;
+}
+
+/* Controls panel */
+.controls-panel {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  padding: 24px;
+  margin-bottom: 32px;
+}
+.controls-panel h3 {
+  font-family: var(--font-body);
+  font-variant: small-caps;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  color: var(--ink-mid);
+  margin-bottom: 16px;
+}
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.control-row label {
+  font-family: var(--font-body);
+  font-size: 14px;
+  min-width: 100px;
+  color: var(--ink);
+}
+.control-row input[type="range"] {
+  flex: 1;
+  min-width: 120px;
+}
+.control-row .val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+  min-width: 50px;
+  text-align: right;
+}
+.control-row select {
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--fig-bg);
+  color: var(--ink);
+}
+.param-group { display: none; }
+.param-group.active { display: block; }
+.button-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+button {
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 6px 18px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover { border-color: var(--border-heavy); }
+
+/* Stats table */
+.stats-wrap {
+  margin-bottom: 8px;
+}
+.stats-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.stats-wrap th, .stats-wrap td {
+  border-bottom: 0.5px solid var(--border);
+  padding: 6px 12px;
+  text-align: left;
+}
+.stats-wrap th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mid);
+  font-weight: normal;
+}
+.stats-wrap td {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* Footer */
+footer {
+  border-top: 0.5px solid var(--border);
+  padding-top: 16px;
+  margin-top: 48px;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-mid);
+}
+footer a { color: var(--ink-mid); }
+
+@media (max-width: 768px) {
+  .controls-panel { padding: 16px; }
+  .control-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .control-row input[type="range"] { width: 100%; }
+}
+@media (max-width: 480px) {
+  body { font-size: 15px; }
+  .stats-wrap table { font-size: 13px; }
+  .stats-wrap td { font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <a href="https://github.com/ShaneIsley/dozr" class="repo-name">dozr</a>
+  <div class="desc">Interactive explorer for dozr's statistical sleep distributions</div>
+  <span class="badge">RUST</span>
+</header>
+
+<div class="figure-wrap">
+  <canvas id="pdfCanvas"></canvas>
+</div>
+<figcaption>Fig. 1 &mdash; Probability density functions. Solid: current distribution. Dashed: previous.</figcaption>
+
+<div class="controls-panel">
+  <h3>Distribution Controls</h3>
+
+  <div class="control-row">
+    <label for="distSelect">Distribution</label>
+    <select id="distSelect">
+      <option value="normal">Normal</option>
+      <option value="exponential">Exponential</option>
+      <option value="lognormal">Log-Normal</option>
+      <option value="pareto">Pareto</option>
+      <option value="uniform">Uniform</option>
+      <option value="triangular">Triangular</option>
+      <option value="gamma">Gamma</option>
+    </select>
+  </div>
+
+  <!-- Normal -->
+  <div class="param-group active" id="params-normal">
+    <div class="control-row">
+      <label>Mean (s)</label>
+      <input type="range" min="0.1" max="10" step="0.1" value="2" data-param="normal-mean">
+      <span class="val" id="val-normal-mean">2.0</span>
+    </div>
+    <div class="control-row">
+      <label>Std Dev (s)</label>
+      <input type="range" min="0.05" max="5" step="0.05" value="0.5" data-param="normal-std">
+      <span class="val" id="val-normal-std">0.50</span>
+    </div>
+  </div>
+
+  <!-- Exponential -->
+  <div class="param-group" id="params-exponential">
+    <div class="control-row">
+      <label>Rate (&lambda;)</label>
+      <input type="range" min="0.1" max="10" step="0.1" value="1" data-param="exp-rate">
+      <span class="val" id="val-exp-rate">1.0</span>
+    </div>
+  </div>
+
+  <!-- Log-Normal -->
+  <div class="param-group" id="params-lognormal">
+    <div class="control-row">
+      <label>Mean (s)</label>
+      <input type="range" min="0.1" max="5" step="0.1" value="1" data-param="ln-mean">
+      <span class="val" id="val-ln-mean">1.0</span>
+    </div>
+    <div class="control-row">
+      <label>Std Dev</label>
+      <input type="range" min="0.05" max="2" step="0.05" value="0.5" data-param="ln-std">
+      <span class="val" id="val-ln-std">0.50</span>
+    </div>
+  </div>
+
+  <!-- Pareto -->
+  <div class="param-group" id="params-pareto">
+    <div class="control-row">
+      <label>Scale (x<sub>m</sub>)</label>
+      <input type="range" min="0.1" max="5" step="0.1" value="1" data-param="par-scale">
+      <span class="val" id="val-par-scale">1.0</span>
+    </div>
+    <div class="control-row">
+      <label>Shape (&alpha;)</label>
+      <input type="range" min="1" max="10" step="0.1" value="2" data-param="par-shape">
+      <span class="val" id="val-par-shape">2.0</span>
+    </div>
+  </div>
+
+  <!-- Uniform -->
+  <div class="param-group" id="params-uniform">
+    <div class="control-row">
+      <label>Min (s)</label>
+      <input type="range" min="0" max="8" step="0.1" value="1" data-param="uni-min">
+      <span class="val" id="val-uni-min">1.0</span>
+    </div>
+    <div class="control-row">
+      <label>Max (s)</label>
+      <input type="range" min="0.5" max="10" step="0.1" value="5" data-param="uni-max">
+      <span class="val" id="val-uni-max">5.0</span>
+    </div>
+  </div>
+
+  <!-- Triangular -->
+  <div class="param-group" id="params-triangular">
+    <div class="control-row">
+      <label>Min (s)</label>
+      <input type="range" min="0" max="8" step="0.1" value="0" data-param="tri-min">
+      <span class="val" id="val-tri-min">0.0</span>
+    </div>
+    <div class="control-row">
+      <label>Max (s)</label>
+      <input type="range" min="0.5" max="15" step="0.1" value="10" data-param="tri-max">
+      <span class="val" id="val-tri-max">10.0</span>
+    </div>
+    <div class="control-row">
+      <label>Mode (s)</label>
+      <input type="range" min="0" max="15" step="0.1" value="5" data-param="tri-mode">
+      <span class="val" id="val-tri-mode">5.0</span>
+    </div>
+  </div>
+
+  <!-- Gamma -->
+  <div class="param-group" id="params-gamma">
+    <div class="control-row">
+      <label>Shape (k)</label>
+      <input type="range" min="0.1" max="10" step="0.1" value="2" data-param="gam-shape">
+      <span class="val" id="val-gam-shape">2.0</span>
+    </div>
+    <div class="control-row">
+      <label>Scale (&theta;)</label>
+      <input type="range" min="0.1" max="5" step="0.1" value="1.5" data-param="gam-scale">
+      <span class="val" id="val-gam-scale">1.5</span>
+    </div>
+  </div>
+
+  <hr style="border:none;border-top:0.5px solid var(--border);margin:16px 0;">
+
+  <div class="control-row">
+    <label>Jitter (%)</label>
+    <input type="range" min="0" max="100" step="1" value="0" id="jitterSlider">
+    <span class="val" id="val-jitter">0%</span>
+  </div>
+
+  <div class="control-row">
+    <label>Anim. Speed</label>
+    <input type="range" min="1" max="50" step="1" value="10" id="speedSlider">
+    <span class="val" id="val-speed">10</span>
+  </div>
+
+  <div class="button-row">
+    <button id="sampleBtn">Sample (n = 200)</button>
+    <button id="clearBtn">Clear Samples</button>
+  </div>
+</div>
+
+<div class="stats-wrap">
+  <table>
+    <thead>
+      <tr><th>Count</th><th>Mean</th><th>Std Dev</th><th>Min</th><th>Max</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td id="st-count">&mdash;</td>
+        <td id="st-mean">&mdash;</td>
+        <td id="st-std">&mdash;</td>
+        <td id="st-min">&mdash;</td>
+        <td id="st-max">&mdash;</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<figcaption>Fig. 2 &mdash; Sample statistics, updated incrementally.</figcaption>
+
+<footer>
+  Part of <a href="https://github.com/ShaneIsley">Shane Isley</a>&rsquo;s project portfolio.
+  &middot; <a href="https://github.com/ShaneIsley/dozr">GitHub repo</a>
+</footer>
+
+<script>
+// ── Distribution PDF & Sampling Functions ──────────────────────────
+
+// Gamma function via Lanczos approximation (needed for Gamma PDF)
+function gammaFn(z) {
+  if (z < 0.5) return Math.PI / (Math.sin(Math.PI * z) * gammaFn(1 - z));
+  z -= 1;
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+  ];
+  let x = c[0];
+  for (let i = 1; i < g + 2; i++) x += c[i] / (z + i);
+  const t = z + g + 0.5;
+  return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+}
+
+function normalPDF(x, mu, sigma) {
+  const z = (x - mu) / sigma;
+  return Math.exp(-0.5 * z * z) / (sigma * Math.sqrt(2 * Math.PI));
+}
+
+function exponentialPDF(x, lambda) {
+  if (x < 0) return 0;
+  return lambda * Math.exp(-lambda * x);
+}
+
+function logNormalPDF(x, mu, sigma) {
+  if (x <= 0) return 0;
+  const lnx = Math.log(x);
+  const z = (lnx - mu) / sigma;
+  return Math.exp(-0.5 * z * z) / (x * sigma * Math.sqrt(2 * Math.PI));
+}
+
+function paretoPDF(x, xm, alpha) {
+  if (x < xm) return 0;
+  return (alpha * Math.pow(xm, alpha)) / Math.pow(x, alpha + 1);
+}
+
+function uniformPDF(x, a, b) {
+  if (x < a || x > b) return 0;
+  return 1 / (b - a);
+}
+
+function triangularPDF(x, a, b, c) {
+  if (x < a || x > b) return 0;
+  if (x < c) return (2 * (x - a)) / ((b - a) * (c - a));
+  if (x === c) return 2 / (b - a);
+  return (2 * (b - x)) / ((b - a) * (b - c));
+}
+
+function gammaPDF(x, k, theta) {
+  if (x <= 0) return 0;
+  return (Math.pow(x, k - 1) * Math.exp(-x / theta)) / (Math.pow(theta, k) * gammaFn(k));
+}
+
+// ── Sampling from distributions (inverse-transform / Box-Muller) ──
+
+function sampleNormal(mu, sigma) {
+  const u1 = Math.random(), u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return Math.max(0, mu + sigma * z);
+}
+
+function sampleExponential(lambda) {
+  return -Math.log(1 - Math.random()) / lambda;
+}
+
+function sampleLogNormal(mu, sigma) {
+  const n = sampleNormal(mu, sigma); // use Box-Muller in log space
+  // Actually need normal sample first
+  const u1 = Math.random(), u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return Math.exp(mu + sigma * z);
+}
+
+function samplePareto(xm, alpha) {
+  const u = Math.random();
+  return xm / Math.pow(u, 1 / alpha);
+}
+
+function sampleUniform(a, b) {
+  return a + Math.random() * (b - a);
+}
+
+function sampleTriangular(a, b, c) {
+  const u = Math.random();
+  const fc = (c - a) / (b - a);
+  if (u < fc) return a + Math.sqrt(u * (b - a) * (c - a));
+  return b - Math.sqrt((1 - u) * (b - a) * (b - c));
+}
+
+// Gamma sampling via Marsaglia & Tsang's method
+function sampleGamma(k, theta) {
+  if (k < 1) {
+    return sampleGamma(k + 1, theta) * Math.pow(Math.random(), 1 / k);
+  }
+  const d = k - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  while (true) {
+    let x, v;
+    do {
+      const u1 = Math.random(), u2 = Math.random();
+      x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * (x * x) * (x * x)) return d * v * theta;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v * theta;
+  }
+}
+
+// ── State ──────────────────────────────────────────────────────────
+
+let currentDist = 'normal';
+let ghostCurve = null; // {points: [{x,y},...]}
+let samples = [];
+let animQueue = []; // samples waiting to animate in
+let animActive = false;
+let constructionLines = []; // {x, birth: timestamp}
+
+function getParams() {
+  const v = (id) => parseFloat(document.querySelector(`[data-param="${id}"]`)?.value || 0);
+  switch (currentDist) {
+    case 'normal':      return { mu: v('normal-mean'), sigma: v('normal-std') };
+    case 'exponential':  return { lambda: v('exp-rate') };
+    case 'lognormal':    return { mu: v('ln-mean'), sigma: v('ln-std') };
+    case 'pareto':       return { xm: v('par-scale'), alpha: v('par-shape') };
+    case 'uniform':      return { a: v('uni-min'), b: v('uni-max') };
+    case 'triangular':   return { a: v('tri-min'), b: v('tri-max'), c: v('tri-mode') };
+    case 'gamma':        return { k: v('gam-shape'), theta: v('gam-scale') };
+  }
+}
+
+function pdfAt(x, dist, params) {
+  switch (dist) {
+    case 'normal':      return normalPDF(x, params.mu, params.sigma);
+    case 'exponential':  return exponentialPDF(x, params.lambda);
+    case 'lognormal':    return logNormalPDF(x, params.mu, params.sigma);
+    case 'pareto':       return paretoPDF(x, params.xm, params.alpha);
+    case 'uniform':      return uniformPDF(x, params.a, params.b);
+    case 'triangular':   return triangularPDF(x, params.a, params.b, params.c);
+    case 'gamma':        return gammaPDF(x, params.k, params.theta);
+  }
+  return 0;
+}
+
+function sampleOne(dist, params) {
+  switch (dist) {
+    case 'normal':      return sampleNormal(params.mu, params.sigma);
+    case 'exponential':  return sampleExponential(params.lambda);
+    case 'lognormal':    return sampleLogNormal(params.mu, params.sigma);
+    case 'pareto':       return samplePareto(params.xm, params.alpha);
+    case 'uniform':      return sampleUniform(params.a, params.b);
+    case 'triangular':   return sampleTriangular(params.a, params.b, params.c);
+    case 'gamma':        return sampleGamma(params.k, params.theta);
+  }
+  return 0;
+}
+
+// Determine a good x-axis range for the current distribution
+function getXRange(dist, params) {
+  switch (dist) {
+    case 'normal':      return [Math.max(0, params.mu - 4 * params.sigma), params.mu + 4 * params.sigma];
+    case 'exponential':  return [0, 5 / params.lambda];
+    case 'lognormal':    return [0, Math.exp(params.mu + 3 * params.sigma)];
+    case 'pareto':       return [params.xm * 0.8, params.xm + 5 / params.alpha];
+    case 'uniform':      return [Math.max(0, params.a - 0.5), params.b + 0.5];
+    case 'triangular':   return [Math.max(0, params.a - 0.5), params.b + 0.5];
+    case 'gamma':        return [0, params.k * params.theta + 4 * Math.sqrt(params.k) * params.theta];
+  }
+  return [0, 10];
+}
+
+// ── Canvas Drawing ─────────────────────────────────────────────────
+
+const canvas = document.getElementById('pdfCanvas');
+const ctx = canvas.getContext('2d');
+const DPR = window.devicePixelRatio || 1;
+
+// Layout constants (in CSS pixels)
+const MARGIN = { top: 24, right: 24, bottom: 64, left: 56 };
+const STRIP_H = 32; // sample strip height below axis
+
+function resize() {
+  const parent = canvas.parentElement;
+  const w = parent.clientWidth - 32; // account for padding
+  const h = Math.round(w * 0.55);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width = w * DPR;
+  canvas.height = h * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  draw();
+}
+
+function plotW() { return parseFloat(canvas.style.width) - MARGIN.left - MARGIN.right; }
+function plotH() { return parseFloat(canvas.style.height) - MARGIN.top - MARGIN.bottom - STRIP_H; }
+
+function buildCurvePoints(dist, params, xRange, numPts) {
+  const pts = [];
+  const [x0, x1] = xRange;
+  for (let i = 0; i <= numPts; i++) {
+    const x = x0 + (x1 - x0) * (i / numPts);
+    const y = pdfAt(x, dist, params);
+    pts.push({ x, y });
+  }
+  return pts;
+}
+
+function draw() {
+  const W = parseFloat(canvas.style.width);
+  const H = parseFloat(canvas.style.height);
+  const pW = plotW();
+  const pH = plotH();
+
+  // Clear
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, W, H);
+
+  const params = getParams();
+  const xRange = getXRange(currentDist, params);
+  const curvePoints = buildCurvePoints(currentDist, params, xRange, 300);
+
+  // Compute y-axis range
+  let yMax = 0;
+  for (const p of curvePoints) if (p.y > yMax) yMax = p.y;
+  if (ghostCurve) for (const p of ghostCurve.points) if (p.y > yMax) yMax = p.y;
+  yMax *= 1.15; // headroom
+  if (yMax === 0) yMax = 1;
+
+  const toCanvasX = (x) => MARGIN.left + ((x - xRange[0]) / (xRange[1] - xRange[0])) * pW;
+  const toCanvasY = (y) => MARGIN.top + pH - (y / yMax) * pH;
+  const stripY = MARGIN.top + pH + 24; // baseline for sample strip
+
+  // ── Draw ghost curve ──
+  if (ghostCurve && ghostCurve.points.length > 1) {
+    ctx.beginPath();
+    ctx.setLineDash([5, 3]);
+    ctx.strokeStyle = 'rgba(17,17,17,0.18)';
+    ctx.lineWidth = 1.2;
+    let started = false;
+    for (const p of ghostCurve.points) {
+      const cx = toCanvasX(p.x);
+      const cy = toCanvasY(p.y);
+      if (!started) { ctx.moveTo(cx, cy); started = true; }
+      else ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ── Draw current curve ──
+  ctx.beginPath();
+  ctx.strokeStyle = '#111111';
+  ctx.lineWidth = 1.5;
+  let started = false;
+  for (const p of curvePoints) {
+    const cx = toCanvasX(p.x);
+    const cy = toCanvasY(p.y);
+    if (!started) { ctx.moveTo(cx, cy); started = true; }
+    else ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+
+  // ── Axes (L-shaped, no top/right spine) ──
+  ctx.strokeStyle = '#111111';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  // Y-axis
+  ctx.moveTo(MARGIN.left, MARGIN.top - 8);
+  ctx.lineTo(MARGIN.left, MARGIN.top + pH);
+  // X-axis
+  ctx.lineTo(MARGIN.left + pW + 8, MARGIN.top + pH);
+  ctx.stroke();
+
+  // Arrow tips
+  // Y-axis arrow (upward)
+  ctx.beginPath();
+  ctx.moveTo(MARGIN.left, MARGIN.top - 8);
+  ctx.lineTo(MARGIN.left - 3, MARGIN.top - 2);
+  ctx.moveTo(MARGIN.left, MARGIN.top - 8);
+  ctx.lineTo(MARGIN.left + 3, MARGIN.top - 2);
+  ctx.stroke();
+  // X-axis arrow (rightward)
+  ctx.beginPath();
+  ctx.moveTo(MARGIN.left + pW + 8, MARGIN.top + pH);
+  ctx.lineTo(MARGIN.left + pW + 2, MARGIN.top + pH - 3);
+  ctx.moveTo(MARGIN.left + pW + 8, MARGIN.top + pH);
+  ctx.lineTo(MARGIN.left + pW + 2, MARGIN.top + pH + 3);
+  ctx.stroke();
+
+  // ── Ticks ──
+  ctx.fillStyle = '#111111';
+  ctx.strokeStyle = '#111111';
+  ctx.lineWidth = 0.8;
+
+  // X-axis ticks (5 ticks)
+  const xTickCount = 5;
+  ctx.font = '11px "Times New Roman", serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let i = 0; i <= xTickCount; i++) {
+    const xVal = xRange[0] + (xRange[1] - xRange[0]) * (i / xTickCount);
+    const cx = toCanvasX(xVal);
+    ctx.beginPath();
+    ctx.moveTo(cx, MARGIN.top + pH);
+    ctx.lineTo(cx, MARGIN.top + pH + 5);
+    ctx.stroke();
+    ctx.fillText(xVal.toFixed(1), cx, MARGIN.top + pH + 7);
+  }
+
+  // Y-axis ticks (4 ticks)
+  const yTickCount = 4;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= yTickCount; i++) {
+    const yVal = yMax * (i / yTickCount);
+    const cy = toCanvasY(yVal);
+    ctx.beginPath();
+    ctx.moveTo(MARGIN.left, cy);
+    ctx.lineTo(MARGIN.left - 5, cy);
+    ctx.stroke();
+    ctx.fillText(yVal.toFixed(2), MARGIN.left - 8, cy);
+  }
+
+  // Axis labels (italic serif)
+  ctx.font = 'italic 13px "Times New Roman", serif';
+  ctx.fillStyle = '#111111';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('x (seconds)', MARGIN.left + pW / 2, MARGIN.top + pH + 22);
+
+  ctx.save();
+  ctx.translate(14, MARGIN.top + pH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('f(x)', 0, 0);
+  ctx.restore();
+
+  // ── Sample strip axis ──
+  ctx.strokeStyle = '#111111';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(MARGIN.left, stripY);
+  ctx.lineTo(MARGIN.left + pW, stripY);
+  ctx.stroke();
+
+  // ── Construction lines (fading) ──
+  const now = performance.now();
+  constructionLines = constructionLines.filter(cl => now - cl.birth < 500);
+  for (const cl of constructionLines) {
+    const age = now - cl.birth;
+    const alpha = Math.max(0, 1 - age / 500);
+    const cx = toCanvasX(cl.x);
+    ctx.beginPath();
+    ctx.setLineDash([2, 2]);
+    ctx.strokeStyle = `rgba(17,17,17,${(alpha * 0.5).toFixed(2)})`;
+    ctx.lineWidth = 0.6;
+    ctx.moveTo(cx, MARGIN.top + pH);
+    ctx.lineTo(cx, stripY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ── Sample dots ──
+  ctx.fillStyle = '#111111';
+  for (const s of samples) {
+    const cx = toCanvasX(s);
+    if (cx >= MARGIN.left && cx <= MARGIN.left + pW) {
+      ctx.beginPath();
+      ctx.arc(cx, stripY, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  // ── Distribution label ──
+  const distNames = {
+    normal: 'Normal', exponential: 'Exponential', lognormal: 'Log-Normal',
+    pareto: 'Pareto', uniform: 'Uniform', triangular: 'Triangular', gamma: 'Gamma'
+  };
+  ctx.font = 'italic 12px "Times New Roman", serif';
+  ctx.fillStyle = '#555555';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(distNames[currentDist], MARGIN.left + pW, MARGIN.top + 2);
+
+  // Continue animating if needed
+  if (constructionLines.length > 0 || animQueue.length > 0) {
+    requestAnimationFrame(draw);
+  }
+}
+
+// ── Animation Loop ─────────────────────────────────────────────────
+
+function startAnimating() {
+  if (animActive) return;
+  animActive = true;
+  animStep();
+}
+
+function animStep() {
+  if (animQueue.length === 0) {
+    animActive = false;
+    draw(); // final redraw
+    return;
+  }
+  const speed = parseInt(document.getElementById('speedSlider').value);
+  const batch = Math.max(1, Math.min(speed, animQueue.length));
+  for (let i = 0; i < batch; i++) {
+    const val = animQueue.shift();
+    samples.push(val);
+    constructionLines.push({ x: val, birth: performance.now() });
+  }
+  updateStats();
+  draw();
+  setTimeout(() => requestAnimationFrame(animStep), Math.max(10, 100 - speed * 2));
+}
+
+// ── Statistics ─────────────────────────────────────────────────────
+
+function updateStats() {
+  const n = samples.length;
+  if (n === 0) {
+    ['st-count','st-mean','st-std','st-min','st-max'].forEach(id =>
+      document.getElementById(id).textContent = '\u2014');
+    return;
+  }
+  let sum = 0, min = Infinity, max = -Infinity;
+  for (const s of samples) { sum += s; if (s < min) min = s; if (s > max) max = s; }
+  const mean = sum / n;
+  let varSum = 0;
+  for (const s of samples) varSum += (s - mean) * (s - mean);
+  const std = n > 1 ? Math.sqrt(varSum / (n - 1)) : 0;
+
+  document.getElementById('st-count').textContent = n;
+  document.getElementById('st-mean').textContent = mean.toFixed(3) + 's';
+  document.getElementById('st-std').textContent = std.toFixed(3) + 's';
+  document.getElementById('st-min').textContent = min.toFixed(3) + 's';
+  document.getElementById('st-max').textContent = max.toFixed(3) + 's';
+}
+
+// ── Event Wiring ───────────────────────────────────────────────────
+
+const distSelect = document.getElementById('distSelect');
+
+distSelect.addEventListener('change', () => {
+  // Save current curve as ghost
+  const params = getParams();
+  const xRange = getXRange(currentDist, params);
+  ghostCurve = { points: buildCurvePoints(currentDist, params, xRange, 300) };
+
+  currentDist = distSelect.value;
+
+  // Show/hide param groups
+  document.querySelectorAll('.param-group').forEach(g => g.classList.remove('active'));
+  const target = document.getElementById('params-' + currentDist);
+  if (target) target.classList.add('active');
+
+  draw();
+});
+
+// Wire up all sliders to show values and redraw
+document.querySelectorAll('input[type="range"]').forEach(slider => {
+  const update = () => {
+    const param = slider.dataset.param;
+    if (param) {
+      const valEl = document.getElementById('val-' + param);
+      if (valEl) valEl.textContent = parseFloat(slider.value).toFixed(2);
+    }
+    if (slider.id === 'jitterSlider') {
+      document.getElementById('val-jitter').textContent = slider.value + '%';
+    }
+    if (slider.id === 'speedSlider') {
+      document.getElementById('val-speed').textContent = slider.value;
+    }
+    draw();
+  };
+  slider.addEventListener('input', update);
+});
+
+document.getElementById('sampleBtn').addEventListener('click', () => {
+  const params = getParams();
+  const jitterPct = parseInt(document.getElementById('jitterSlider').value) / 100;
+  const newSamples = [];
+  for (let i = 0; i < 200; i++) {
+    let val = sampleOne(currentDist, params);
+    if (jitterPct > 0) {
+      val += val * jitterPct * Math.random();
+    }
+    val = Math.max(0, val);
+    newSamples.push(val);
+  }
+  animQueue.push(...newSamples);
+  startAnimating();
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  samples = [];
+  animQueue = [];
+  constructionLines = [];
+  updateStats();
+  draw();
+});
+
+// Handle visibility
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && (animQueue.length > 0 || constructionLines.length > 0)) {
+    draw();
+    if (animQueue.length > 0) startAnimating();
+  }
+});
+
+// Init
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>
