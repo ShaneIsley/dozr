@@ -20,7 +20,7 @@
 *   **Alignment**: Align the wait to the next even interval (e.g., `1m`, `30s`).
 *   **Jitter**: Add a random duration of jitter to the wait.
 *   **Probabilistic Waits**: Wait only with a certain probability.
-*   **Verbose Output**: Display a progress bar with the time remaining.
+*   **Verbose Output**: Print timestamped time-remaining updates to stderr.
 
 ## Installation
 
@@ -63,7 +63,7 @@ Sample a wait from a Normal distribution with a mean of 10 seconds and a standar
 
 ```bash
 # Wait for a duration sampled from a Normal distribution
-dozr n 10s 2
+dozr n 10s 2s
 ```
 
 ### Time-Based Waits
@@ -91,10 +91,10 @@ Wait 30 seconds with a 50% chance of waiting:
 dozr d 30s -p 0.5
 ```
 
-Display a progress bar while waiting:
+Print time-remaining updates to stderr while waiting:
 
 ```bash
-# Wait for 10 seconds with a progress bar
+# Wait for 10 seconds, reporting progress
 dozr d 10s -v
 ```
 
@@ -105,17 +105,19 @@ dozr d 10s -v
 | Full Command | Alias(es) | Arguments | Example |
 | :--- | :--- | :--- | :--- |
 | `duration` | `d` | `<TIME>` | `dozr d 5s` |
-| `normal` | `n` | `<MEAN> <STD_DEV>` | `dozr n 10s 2.5` |
+| `normal` | `n` | `<MEAN> <STD_DEV>` | `dozr n 10s 2500ms` |
 | `exponential`| `e` | `<LAMBDA>` | `dozr e 0.5` |
-| `log-normal` | `ln` | `<MEAN> <STD_DEV>` | `dozr ln 1s 0.5` |
-| `pareto` | `par` | `<SCALE> <SHAPE>` | `dozr par 1.0 2.0` |
+| `log-normal` | `ln` | `<MEAN> <STD_DEV>` | `dozr ln 1s 500ms` |
+| `pareto` | `par` | `<SCALE> <SHAPE>` | `dozr par 1s 2.0` |
 | `uniform` | `u` | `<MIN> <MAX>` | `dozr u 1s 10s` |
-| `triangular` | `t` | `<MIN> <MAX> <MODE>`| `dozr t 0.0 10.0 5.0` |
-| `gamma` | `g` | `<SHAPE> <SCALE>` | `dozr g 2.0 1.5` |
+| `triangular` | `t` | `<MIN> <MAX> <MODE>`| `dozr t 0s 10s 5s` |
+| `gamma` | `g` | `<SHAPE> <SCALE>` | `dozr g 2.0 1500ms` |
 | `align` | `a`, `ali` | `<INTERVAL>` | `dozr a 1m` |
 | `at` | *(none)* | `<HH:MM[:SS]>` | `dozr at 22:30` |
 
-Bare numbers such as standard deviations, triangular values, and Pareto or gamma scales are in seconds. For `log-normal`, `<MEAN>` and `<STD_DEV>` describe the waits themselves, not the underlying normal distribution. Invalid parameters, such as a negative standard deviation or a uniform `<MIN>` above `<MAX>`, are rejected with exit status 2.
+Every argument that is a length of time needs a unit, such as `500ms`, `2s`, or `1m30s`. Only three arguments are bare numbers: the exponential rate `<LAMBDA>` in events per second, and the Pareto and gamma `<SHAPE>`. For `log-normal`, `<MEAN>` and `<STD_DEV>` describe the waits themselves, not the underlying normal distribution. Invalid parameters, such as a missing unit or a uniform `<MIN>` above `<MAX>`, are rejected with exit status 2.
+
+A `normal` sample can come out negative. `dozr` waits for zero instead, plus any jitter, and says so when `-v` is on.
 
 If an `at` time falls in a daylight-saving gap, `dozr` waits until the same clock time after the clocks change (02:30 becomes 03:30). If it falls in a repeated hour, the first occurrence that is still in the future is used.
 
@@ -125,7 +127,7 @@ If an `at` time falls in a daylight-saving gap, `dozr` waits until the same cloc
 | :--- | :--- | :--- | :--- |
 | `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>`. Not applicable to `align` or `at`. |
 | `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. Applies to every command and keeps any jitter. |
-| `--verbose` | `-v` | `[TIME]` | Shows progress. Can take an optional update interval (e.g., `-v 1s`). |
+| `--verbose` | `-v` | `[TIME]` | Prints progress to stderr. Without a value, updates are adaptive. With a period of at least `1ms`, such as `-v 250ms`, an update is printed every period. Put a bare `-v` after the command, because `dozr -v d 5s` would read `d` as the period. |
 | `--help` | `-h` | *(none)* | Displays the help message for the command. |
 | `--version` | `-V` | *(none)* | Displays the application version. |
 

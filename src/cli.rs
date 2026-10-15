@@ -1,4 +1,5 @@
 use crate::conditions::{self, WaitCondition};
+use crate::{MIN_VERBOSE_PERIOD, Verbose};
 use chrono::{DateTime, Duration as ChronoDuration, LocalResult, NaiveTime, Offset, TimeZone};
 use clap::{Parser, Subcommand};
 use std::time::Duration;
@@ -83,15 +84,6 @@ fn parse_positive(s: &str) -> Result<f64, String> {
     }
 }
 
-fn parse_non_negative(s: &str) -> Result<f64, String> {
-    let v = parse_finite(s)?;
-    if v >= 0.0 {
-        Ok(v)
-    } else {
-        Err(format!("must be 0 or greater, got {v}"))
-    }
-}
-
 fn parse_probability(s: &str) -> Result<f64, String> {
     let v = parse_finite(s)?;
     if (0.0..=1.0).contains(&v) {
@@ -101,8 +93,39 @@ fn parse_probability(s: &str) -> Result<f64, String> {
     }
 }
 
+/// Parses a length of time such as `500ms` or `1m30s`.
+///
+/// A bare number, even `0`, is rejected with a hint to add a unit, rather
+/// than humantime's terse "invalid character" or "time unit needed".
+fn parse_time(s: &str) -> Result<Duration, String> {
+    if s.parse::<f64>().is_ok() {
+        return Err(format!("a unit is required, for example {s}s or {s}ms"));
+    }
+    humantime::parse_duration(s).map_err(|e| e.to_string())
+}
+
+/// Parses the `--verbose` value: `adaptive`, `off`, or an update period of
+/// at least [`MIN_VERBOSE_PERIOD`].
+fn parse_verbose(s: &str) -> Result<Verbose, String> {
+    match s {
+        "adaptive" => Ok(Verbose::Adaptive),
+        "off" => Ok(Verbose::Off),
+        _ => {
+            let period = parse_time(s)?;
+            if period < MIN_VERBOSE_PERIOD {
+                Err(format!(
+                    "update period must be at least {}",
+                    humantime::format_duration(MIN_VERBOSE_PERIOD)
+                ))
+            } else {
+                Ok(Verbose::Every(period))
+            }
+        }
+    }
+}
+
 fn parse_positive_duration(s: &str) -> Result<Duration, String> {
-    let d = humantime::parse_duration(s).map_err(|e| e.to_string())?;
+    let d = parse_time(s)?;
     if d.is_zero() {
         Err("must be greater than 0".to_string())
     } else {
@@ -117,97 +140,114 @@ pub struct Cli {
     pub command: Commands,
 
     /// Add a random duration of jitter (e.g., "100ms").
-    #[arg(short, long, value_parser = humantime::parse_duration, global = true)]
+    #[arg(short, long, value_parser = parse_time, global = true)]
     pub jitter: Option<Duration>,
 
-    /// Enable verbose output, with an optional update period (e.g., "250ms").
-    /// If no update period is specified, adaptive verbose output is used.
-    #[arg(short, long, value_name = "UPDATE_PERIOD", value_parser = humantime::parse_duration, num_args = 0..=1, default_missing_value = "1ns", global = true)]
-    pub verbose: Option<Duration>,
+    /// Show progress on stderr. With no value, updates come less often as the
+    /// remaining time grows; with a period (at least 1ms, e.g. "250ms"), they
+    /// come on that period.
+    #[arg(
+        short,
+        long,
+        value_name = "UPDATE_PERIOD",
+        value_parser = parse_verbose,
+        num_args = 0..=1,
+        default_value = "off",
+        hide_default_value = true,
+        default_missing_value = "adaptive",
+        global = true
+    )]
+    pub verbose: Verbose,
 
     /// Wait only with a certain probability (0.0 to 1.0).
     #[arg(short, long, global = true, value_parser = parse_probability, allow_negative_numbers = true)]
     pub probability: Option<f64>,
 }
 
+/// Every argument that is a length of time takes a value such as `500ms`,
+/// `2s`, or `1m30s`. Bare numbers are only used for rates and shape
+/// parameters, which have no unit.
+///
+/// Distributions that can produce a negative value (only `normal`, in
+/// practice) wait for zero instead.
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Wait for a fixed duration
     #[command(alias = "d")]
     Duration {
         /// The base duration to wait (e.g., "1s", "500ms").
-        #[arg(value_parser = humantime::parse_duration)]
+        #[arg(value_parser = parse_time)]
         time: Duration,
     },
-    /// Wait using a normal distribution
+    /// Wait using a normal distribution. Negative samples wait for zero.
     #[command(alias = "n")]
     Normal {
-        /// Mean of the Normal distribution (e.g., "1s").
-        #[arg(value_parser = humantime::parse_duration)]
+        /// Mean wait (e.g., "1s").
+        #[arg(value_parser = parse_time)]
         mean: Duration,
-        /// Standard deviation in seconds (e.g., "0.1"). Must be 0 or greater.
-        #[arg(value_parser = parse_non_negative, allow_negative_numbers = true)]
-        std_dev: f64,
+        /// Standard deviation (e.g., "100ms").
+        #[arg(value_parser = parse_time)]
+        std_dev: Duration,
     },
     /// Wait using an exponential distribution
     #[command(alias = "e")]
     Exponential {
-        /// Rate in events per second (e.g., "0.5" gives a 2s mean). Must be greater than 0.
+        /// Rate in events per second, a bare number (e.g., "0.5" gives a 2s mean). Must be greater than 0.
         #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
         lambda: f64,
     },
     /// Wait using a log-normal distribution
     #[command(alias = "ln")]
     LogNormal {
-        /// Mean of the sampled waits (e.g., "1s"). Must be greater than 0.
+        /// Mean wait (e.g., "1s"). Must be greater than 0.
         #[arg(value_parser = parse_positive_duration)]
         mean: Duration,
-        /// Standard deviation of the sampled waits, in seconds (e.g., "0.1").
-        #[arg(value_parser = parse_non_negative, allow_negative_numbers = true)]
-        std_dev: f64,
+        /// Standard deviation of the waits (e.g., "250ms").
+        #[arg(value_parser = parse_time)]
+        std_dev: Duration,
     },
     /// Wait using a Pareto distribution
     #[command(alias = "par")]
     Pareto {
-        /// Scale (minimum wait) in seconds (e.g., "1.0"). Must be greater than 0.
-        #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
-        scale: f64,
-        /// Shape parameter (e.g., "1.5"). Must be greater than 0.
+        /// Minimum wait (e.g., "1s"). Must be greater than 0.
+        #[arg(value_parser = parse_positive_duration)]
+        scale: Duration,
+        /// Shape, a bare number (e.g., "1.5"); smaller means a heavier tail. Must be greater than 0.
         #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
         shape: f64,
     },
     /// Wait using a uniform distribution
     #[command(alias = "u")]
     Uniform {
-        /// Minimum value for the Uniform distribution (e.g., "1s").
-        #[arg(value_parser = humantime::parse_duration)]
+        /// Minimum wait (e.g., "1s").
+        #[arg(value_parser = parse_time)]
         min: Duration,
-        /// Maximum value for the Uniform distribution (e.g., "5s"). Must be greater than MIN.
-        #[arg(value_parser = humantime::parse_duration)]
+        /// Maximum wait (e.g., "5s"). Must be greater than MIN.
+        #[arg(value_parser = parse_time)]
         max: Duration,
     },
     /// Wait using a triangular distribution
     #[command(alias = "t")]
     Triangular {
-        /// Minimum value in seconds (e.g., "0.0").
-        #[arg(value_parser = parse_finite, allow_negative_numbers = true)]
-        min: f64,
-        /// Maximum value in seconds (e.g., "1.0"). Must be greater than MIN.
-        #[arg(value_parser = parse_finite, allow_negative_numbers = true)]
-        max: f64,
-        /// Most likely value in seconds (e.g., "0.5"). Must be between MIN and MAX.
-        #[arg(value_parser = parse_finite, allow_negative_numbers = true)]
-        mode: f64,
+        /// Minimum wait (e.g., "1s").
+        #[arg(value_parser = parse_time)]
+        min: Duration,
+        /// Maximum wait (e.g., "5s"). Must be greater than MIN.
+        #[arg(value_parser = parse_time)]
+        max: Duration,
+        /// Most likely wait (e.g., "2s"). Must be between MIN and MAX.
+        #[arg(value_parser = parse_time)]
+        mode: Duration,
     },
     /// Wait using a gamma distribution
     #[command(alias = "g")]
     Gamma {
-        /// Shape parameter (e.g., "2.0"). Must be greater than 0.
+        /// Shape, a bare number (e.g., "2.0"). Must be greater than 0.
         #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
         shape: f64,
-        /// Scale parameter in seconds (e.g., "1.0"). Must be greater than 0.
-        #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
-        scale: f64,
+        /// Scale (e.g., "1s"). The mean wait is SHAPE times SCALE. Must be greater than 0.
+        #[arg(value_parser = parse_positive_duration)]
+        scale: Duration,
     },
     /// Align the wait to the next even interval
     #[command(aliases = &["a", "ali"])]
@@ -237,10 +277,15 @@ impl Commands {
                 humantime::format_duration(*max)
             )),
             Commands::Triangular { min, max, .. } if min >= max => Err(format!(
-                "triangular <MIN> must be less than <MAX>, got {min} and {max}"
+                "triangular <MIN> must be less than <MAX>, got {} and {}",
+                humantime::format_duration(*min),
+                humantime::format_duration(*max)
             )),
             Commands::Triangular { min, max, mode } if mode < min || mode > max => Err(format!(
-                "triangular <MODE> must be between <MIN> and <MAX>, got {mode} outside {min}..{max}"
+                "triangular <MODE> must be between <MIN> and <MAX>, got {} outside {}..{}",
+                humantime::format_duration(*mode),
+                humantime::format_duration(*min),
+                humantime::format_duration(*max)
             )),
             _ => Ok(()),
         }
@@ -253,7 +298,7 @@ impl Commands {
     pub fn into_wait_condition(
         self,
         jitter: Option<Duration>,
-        verbose: Option<Duration>,
+        verbose: Verbose,
         probability: Option<f64>,
     ) -> Box<dyn WaitCondition> {
         let base: Box<dyn WaitCondition> = match self {
@@ -321,24 +366,6 @@ impl Commands {
                 verbose,
             }),
             None => base,
-        }
-    }
-}
-
-impl Cli {
-    pub fn is_adaptive_verbose(&self) -> bool {
-        self.verbose == Some(Duration::from_nanos(1))
-    }
-
-    /// Returns the verbose update period, if specified.
-    ///
-    /// If adaptive verbose output is enabled, this method returns `None`.
-    /// Otherwise, it returns `Some(Duration)` with the specified update period.
-    pub fn verbose_period(&self) -> Option<Duration> {
-        if self.is_adaptive_verbose() {
-            None
-        } else {
-            self.verbose
         }
     }
 }
@@ -444,11 +471,18 @@ mod tests {
         assert!(parse_probability("1.01").is_err());
         assert!(parse_probability("-0.1").is_err());
         assert!(parse_probability("NaN").is_err());
-        assert_eq!(parse_non_negative("0"), Ok(0.0));
-        assert!(parse_non_negative("-1").is_err());
         assert!(parse_positive("0").is_err());
         assert!(parse_positive("inf").is_err());
         assert!(parse_positive_duration("0s").is_err());
+        assert_eq!(parse_time("0s"), Ok(Duration::ZERO));
+        assert!(parse_time("0").unwrap_err().contains("a unit is required"));
+        assert_eq!(parse_time("1m30s"), Ok(Duration::from_secs(90)));
+        assert!(
+            parse_time("0.1")
+                .unwrap_err()
+                .contains("a unit is required")
+        );
+        assert!(parse_time("2").unwrap_err().contains("a unit is required"));
         assert_eq!(parse_positive_duration("1ms"), Ok(Duration::from_millis(1)));
     }
 
@@ -462,12 +496,73 @@ mod tests {
         assert!(uniform(2, 2).validate().is_err());
         assert!(uniform(5, 1).validate().is_err());
 
-        let tri = |min, max, mode| Commands::Triangular { min, max, mode };
-        assert!(tri(0.0, 1.0, 0.5).validate().is_ok());
-        assert!(tri(0.0, 1.0, 0.0).validate().is_ok());
-        assert!(tri(0.0, 1.0, 1.0).validate().is_ok());
-        assert!(tri(1.0, 1.0, 1.0).validate().is_err());
-        assert!(tri(0.0, 1.0, 1.5).validate().is_err());
-        assert!(tri(0.0, 1.0, -0.5).validate().is_err());
+        let tri = |min, max, mode| Commands::Triangular {
+            min: Duration::from_millis(min),
+            max: Duration::from_millis(max),
+            mode: Duration::from_millis(mode),
+        };
+        assert!(tri(0, 1000, 500).validate().is_ok());
+        assert!(tri(0, 1000, 0).validate().is_ok());
+        assert!(tri(0, 1000, 1000).validate().is_ok());
+        assert!(tri(1000, 1000, 1000).validate().is_err());
+        assert!(tri(0, 1000, 1500).validate().is_err());
+        assert!(tri(500, 1000, 100).validate().is_err());
+    }
+
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        Cli::try_parse_from(std::iter::once("dozr").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn test_verbose_parsing() {
+        assert_eq!(parse(&["d", "1s"]).unwrap().verbose, Verbose::Off);
+        assert_eq!(
+            parse(&["d", "1s", "-v"]).unwrap().verbose,
+            Verbose::Adaptive
+        );
+        assert_eq!(
+            parse(&["d", "1s", "-v", "500ms"]).unwrap().verbose,
+            Verbose::Every(Duration::from_millis(500))
+        );
+        // Global flag given before the subcommand.
+        assert_eq!(
+            parse(&["-v", "500ms", "d", "1s"]).unwrap().verbose,
+            Verbose::Every(Duration::from_millis(500))
+        );
+        // A bare `-v` directly before the subcommand would take the subcommand
+        // name as its value, so it must come after the subcommand instead.
+        assert_eq!(
+            parse(&["d", "1s", "-v", "1ms"]).unwrap().verbose,
+            Verbose::Every(Duration::from_millis(1))
+        );
+        assert!(parse(&["d", "1s", "-v", "1ns"]).is_err());
+        assert!(parse(&["d", "1s", "-v", "999us"]).is_err());
+        assert!(parse(&["d", "1s", "-v", "0s"]).is_err());
+    }
+
+    #[test]
+    fn test_time_arguments_require_units() {
+        // Bare numbers are rejected wherever a length of time is expected.
+        for args in [
+            &["n", "1s", "0.1"][..],
+            &["ln", "1s", "0.1"],
+            &["par", "1", "2"],
+            &["u", "1", "2"],
+            &["t", "1", "3", "2"],
+            &["g", "2", "1.5"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?} should be rejected");
+        }
+        // The same commands with units are accepted.
+        for args in [
+            &["n", "1s", "100ms"][..],
+            &["ln", "1s", "100ms"],
+            &["par", "1s", "2"],
+            &["u", "1s", "2s"],
+            &["t", "1s", "3s", "2s"],
+            &["g", "2", "1500ms"],
+        ] {
+            assert!(parse(args).is_ok(), "{args:?} should be accepted");
+        }
     }
 }

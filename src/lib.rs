@@ -4,6 +4,28 @@ use clap::{CommandFactory, Parser};
 pub mod cli;
 pub mod conditions;
 
+/// How progress is reported while waiting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Verbose {
+    /// No progress output.
+    #[default]
+    Off,
+    /// Update less often as the remaining time grows.
+    Adaptive,
+    /// Update on a fixed period. Must be at least [`MIN_VERBOSE_PERIOD`].
+    Every(std::time::Duration),
+}
+
+impl Verbose {
+    /// Whether any progress output is produced.
+    pub fn is_on(&self) -> bool {
+        *self != Verbose::Off
+    }
+}
+
+/// Shortest fixed update period accepted for [`Verbose::Every`].
+pub const MIN_VERBOSE_PERIOD: std::time::Duration = std::time::Duration::from_millis(1);
+
 /// The main entry point for the dozr application.
 ///
 /// This function parses command-line arguments, validates them, determines
@@ -29,7 +51,9 @@ fn run_with_args(args: cli::Cli) -> Result<()> {
 
 /// Performs the wait with verbose progress updates every `update_period`.
 ///
-/// Never sleeps past the end of `total_wait`, however long `update_period` is.
+/// `display_fn` receives the exact remaining time on every tick, and
+/// `Duration::ZERO` once when the wait is over. The wait never runs past
+/// `total_wait`, however long `update_period` is.
 pub fn verbose_wait<F>(
     total_wait: std::time::Duration,
     update_period: std::time::Duration,
@@ -37,26 +61,16 @@ pub fn verbose_wait<F>(
 ) where
     F: FnMut(std::time::Duration),
 {
-    // A zero period would spin; treat it as the smallest sensible tick.
-    let update_period = update_period.max(std::time::Duration::from_millis(1));
+    let update_period = update_period.max(MIN_VERBOSE_PERIOD);
     let start = std::time::Instant::now();
-    let mut last_displayed_eta: Option<u64> = None;
 
     loop {
         let remaining = total_wait.saturating_sub(start.elapsed());
-
         if remaining.is_zero() {
             display_fn(std::time::Duration::ZERO);
             break;
         }
-
-        let rounded_eta = remaining.as_secs_f64().round() as u64;
-        // Only display if ETA has changed or it's the very first display
-        if last_displayed_eta != Some(rounded_eta) {
-            display_fn(std::time::Duration::from_secs(rounded_eta));
-            last_displayed_eta = Some(rounded_eta);
-        }
-
+        display_fn(remaining);
         std::thread::sleep(update_period.min(remaining));
     }
 }
@@ -153,6 +167,25 @@ mod tests {
     }
 
     #[test]
+    fn test_verbose_wait_reports_every_tick() {
+        // 100ms at a 20ms period is five ticks, then the final zero. Every
+        // reported remaining time must be strictly decreasing.
+        let mut calls = Vec::new();
+        verbose_wait(Duration::from_millis(100), Duration::from_millis(20), |d| {
+            calls.push(d)
+        });
+        assert!(calls.len() >= 5, "only {} updates: {calls:?}", calls.len());
+        assert!(calls.windows(2).all(|w| w[0] > w[1]), "{calls:?}");
+    }
+
+    #[test]
+    fn test_verbose_is_on() {
+        assert!(!Verbose::Off.is_on());
+        assert!(Verbose::Adaptive.is_on());
+        assert!(Verbose::Every(Duration::from_secs(1)).is_on());
+    }
+
+    #[test]
     fn test_verbose_wait_period_longer_than_wait_does_not_overshoot() {
         let start = Instant::now();
         verbose_wait(Duration::from_millis(100), Duration::from_secs(10), |_| {});
@@ -211,7 +244,7 @@ mod tests {
                 time: Duration::from_millis(50),
             },
             jitter: None,
-            verbose: None,
+            verbose: Verbose::Off,
             probability: None,
         };
         assert!(run_with_args(cli).is_ok());
@@ -222,10 +255,10 @@ mod tests {
         let cli = Cli {
             command: Commands::Normal {
                 mean: Duration::from_millis(50),
-                std_dev: 0.01,
+                std_dev: Duration::from_millis(10),
             },
             jitter: None,
-            verbose: None,
+            verbose: Verbose::Off,
             probability: None,
         };
         assert!(run_with_args(cli).is_ok());

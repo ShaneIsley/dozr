@@ -3,7 +3,6 @@
 //! Keep every test's total sleeping under 2 seconds so the suite stays fast.
 
 use assert_cmd::Command;
-use dozr::cli::{Cli, Commands};
 use predicates::prelude::{Predicate, PredicateBooleanExt};
 use predicates::str;
 use std::process::Output;
@@ -35,13 +34,13 @@ fn long_wait_commands() -> Vec<Vec<String>> {
     let at = clock_in(chrono::Duration::hours(1), "%H:%M");
     [
         vec!["d", "5s"],
-        vec!["n", "5s", "0.1"],
+        vec!["n", "5s", "100ms"],
         vec!["e", "0.01"],
-        vec!["ln", "5s", "0.1"],
-        vec!["par", "5", "2"],
+        vec!["ln", "5s", "100ms"],
+        vec!["par", "5s", "2"],
         vec!["u", "5s", "6s"],
-        vec!["t", "5", "6", "5.5"],
-        vec!["g", "50", "0.2"],
+        vec!["t", "5s", "6s", "5500ms"],
+        vec!["g", "50", "200ms"],
         vec!["a", "1h"],
         vec!["at", at.as_str()],
     ]
@@ -57,13 +56,13 @@ fn long_wait_commands() -> Vec<Vec<String>> {
 fn short_wait_commands() -> impl Iterator<Item = Vec<String>> {
     [
         vec!["d", "10ms"],
-        vec!["n", "10ms", "0.001"],
+        vec!["n", "10ms", "1ms"],
         vec!["e", "100"],
-        vec!["ln", "10ms", "0.001"],
-        vec!["par", "0.01", "5"],
+        vec!["ln", "10ms", "1ms"],
+        vec!["par", "10ms", "5"],
         vec!["u", "1ms", "10ms"],
-        vec!["t", "0", "0.02", "0.01"],
-        vec!["g", "2", "0.005"],
+        vec!["t", "0s", "20ms", "10ms"],
+        vec!["g", "2", "5ms"],
         vec!["a", "100ms"],
     ]
     .into_iter()
@@ -85,17 +84,6 @@ fn with_args(base: &[String], extra: &[&str]) -> Vec<String> {
 
 fn as_strs(v: &[String]) -> Vec<&str> {
     v.iter().map(String::as_str).collect()
-}
-
-fn default_cli_args() -> Cli {
-    Cli {
-        command: Commands::Duration {
-            time: Duration::from_secs(0),
-        },
-        jitter: None,
-        verbose: None,
-        probability: None,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +192,7 @@ fn test_distribution_waits_complete_quickly() {
 
 #[test]
 fn test_triangular_distribution_wait_time() {
-    let (elapsed, output) = timed(&["t", "0.1", "0.5", "0.2"]);
+    let (elapsed, output) = timed(&["t", "100ms", "500ms", "200ms"]);
     assert!(output.status.success());
     assert!(elapsed >= Duration::from_millis(100));
     assert!(elapsed < Duration::from_secs(1));
@@ -212,7 +200,7 @@ fn test_triangular_distribution_wait_time() {
 
 #[test]
 fn test_normal_distribution_wait_time() {
-    let (elapsed, output) = timed(&["n", "200ms", "0.01"]);
+    let (elapsed, output) = timed(&["n", "200ms", "10ms"]);
     assert!(output.status.success());
     assert!(elapsed >= Duration::from_millis(150));
     assert!(elapsed < Duration::from_secs(1));
@@ -261,7 +249,7 @@ fn test_duration_and_align_are_mutually_exclusive() {
 #[test]
 fn test_mutually_exclusive_distribution_args() {
     dozr()
-        .args(["d", "1s", "n", "1s", "0.1"])
+        .args(["d", "1s", "n", "1s", "100ms"])
         .assert()
         .failure()
         .stderr(str::contains("error: unexpected argument 'n' found"));
@@ -403,20 +391,20 @@ fn test_invalid_parameters_exit_2_and_name_the_argument() {
     let cases: &[(&[&str], &str)] = &[
         (&["d", "0s", "-p", "7"], "--probability"),
         (&["d", "0s", "-p", "-0.1"], "--probability"),
-        (&["n", "1s", "-1"], "<STD_DEV>"),
-        (&["ln", "1s", "-1"], "<STD_DEV>"),
-        (&["ln", "0s", "0.1"], "<MEAN>"),
+        (&["ln", "0s", "100ms"], "<MEAN>"),
         (&["e", "0"], "<LAMBDA>"),
         (&["e", "-0.5"], "<LAMBDA>"),
-        (&["par", "0", "1"], "<SCALE>"),
-        (&["par", "1", "0"], "<SHAPE>"),
-        (&["g", "0", "1"], "<SHAPE>"),
-        (&["g", "1", "0"], "<SCALE>"),
+        (&["par", "0s", "1"], "<SCALE>"),
+        (&["par", "1s", "0"], "<SHAPE>"),
+        (&["g", "0", "1s"], "<SHAPE>"),
+        (&["g", "1", "0s"], "<SCALE>"),
         (&["u", "5s", "1s"], "<MIN>"),
         (&["u", "1s", "1s"], "<MIN>"),
-        (&["t", "0", "1", "2"], "<MODE>"),
-        (&["t", "1", "1", "1"], "<MIN>"),
+        (&["t", "0s", "1s", "2s"], "<MODE>"),
+        (&["t", "1s", "1s", "1s"], "<MIN>"),
         (&["a", "0s"], "<INTERVAL>"),
+        (&["d", "1s", "-v", "1ns"], "--verbose"),
+        (&["d", "1s", "-v", "0s"], "--verbose"),
     ];
     for (args, names) in cases {
         let output = dozr().args(*args).output().unwrap();
@@ -435,42 +423,15 @@ fn test_boundary_parameters_are_accepted() {
     let cases: &[&[&str]] = &[
         &["d", "10ms", "-p", "0.0"],
         &["d", "10ms", "-p", "1.0"],
-        &["n", "10ms", "0"],
-        &["ln", "10ms", "0"],
-        &["t", "0", "0.01", "0"],
-        &["t", "0", "0.01", "0.01"],
+        &["n", "10ms", "0s"],
+        &["ln", "10ms", "0s"],
+        &["t", "0s", "10ms", "0s"],
+        &["t", "0s", "10ms", "10ms"],
+        &["d", "10ms", "-v", "1ms"],
     ];
     for args in cases {
         dozr().args(*args).assert().success();
     }
-}
-
-// ---------------------------------------------------------------------------
-// Cli helper methods
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_is_adaptive_verbose() {
-    let mut cli = default_cli_args();
-    cli.verbose = Some(Duration::from_nanos(1));
-    assert!(cli.is_adaptive_verbose());
-
-    cli.verbose = Some(Duration::from_secs(1));
-    assert!(!cli.is_adaptive_verbose());
-
-    assert!(!default_cli_args().is_adaptive_verbose());
-}
-
-#[test]
-fn test_verbose_period() {
-    let mut cli = default_cli_args();
-    cli.verbose = Some(Duration::from_nanos(1));
-    assert_eq!(cli.verbose_period(), None);
-
-    cli.verbose = Some(Duration::from_secs(1));
-    assert_eq!(cli.verbose_period(), Some(Duration::from_secs(1)));
-
-    assert_eq!(default_cli_args().verbose_period(), None);
 }
 
 #[test]
@@ -478,4 +439,125 @@ fn test_skip_message_is_only_shown_when_verbose() {
     let output = dozr().args(["d", "1s", "-p", "0"]).output().unwrap();
     assert!(output.status.success());
     assert!(!str::contains("Skipping sleep").eval(&String::from_utf8_lossy(&output.stderr)));
+}
+
+// ---------------------------------------------------------------------------
+// P1-2: sub-second verbose periods produce sub-second updates
+// ---------------------------------------------------------------------------
+
+fn count_updates(stderr: &[u8]) -> usize {
+    String::from_utf8_lossy(stderr)
+        .matches("[DOZR] Time remaining:")
+        .count()
+}
+
+#[test]
+fn test_sub_second_verbose_period_updates_every_tick() {
+    // 1.5s at 250ms is six ticks; allow for scheduling delay under load.
+    let output = dozr()
+        .args(["d", "1500ms", "-v", "250ms"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let updates = count_updates(&output.stderr);
+    assert!(updates >= 4, "only {updates} updates");
+    // Sub-second periods show tenths of a second.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Time remaining: 1.5s"), "{stderr}");
+}
+
+#[test]
+fn test_whole_second_verbose_period_does_not_spam() {
+    let output = dozr().args(["d", "2s", "-v", "1s"]).output().unwrap();
+    assert!(output.status.success());
+    let updates = count_updates(&output.stderr);
+    assert!((2..=3).contains(&updates), "{updates} updates");
+}
+
+// ---------------------------------------------------------------------------
+// P1-3: lengths of time need units
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_bare_numbers_for_time_arguments_exit_2() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["n", "1s", "0.1"], "<STD_DEV>"),
+        (&["ln", "1s", "0.1"], "<STD_DEV>"),
+        (&["par", "1", "2"], "<SCALE>"),
+        (&["u", "1", "2s"], "<MIN>"),
+        (&["t", "1", "3s", "2s"], "<MIN>"),
+        (&["g", "2", "1.5"], "<SCALE>"),
+    ];
+    for (args, names) in cases {
+        let output = dozr().args(*args).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {stderr}");
+        assert!(
+            stderr.contains(names),
+            "{args:?} should name {names}: {stderr}"
+        );
+        assert!(stderr.contains("a unit is required"), "{args:?}: {stderr}");
+    }
+}
+
+#[test]
+fn test_help_documents_units() {
+    for (sub, expected) in [
+        ("normal", "Standard deviation (e.g., \"100ms\")"),
+        ("exponential", "events per second"),
+        ("pareto", "Minimum wait"),
+        ("triangular", "Most likely wait"),
+        ("gamma", "Scale (e.g., \"1s\")"),
+    ] {
+        dozr()
+            .args([sub, "--help"])
+            .assert()
+            .success()
+            .stdout(str::contains(expected));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P1-4: --verbose forms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_verbose_flag_before_subcommand() {
+    dozr()
+        .args(["-v", "250ms", "d", "300ms"])
+        .assert()
+        .success()
+        .stderr(str::contains("Time remaining: 0.3s"));
+}
+
+// ---------------------------------------------------------------------------
+// P1-5: clamped samples are reported in verbose mode
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_clamped_sample_is_reported_when_verbose() {
+    // A normal with mean 0 is negative half the time, so twenty runs all
+    // missing it has a 1-in-a-million chance.
+    let note = "clamped to zero";
+    let mut saw_note = false;
+    for _ in 0..20 {
+        let output = dozr().args(["n", "0s", "10ms", "-v"]).output().unwrap();
+        assert!(output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains(note) {
+            assert!(stderr.contains("Wait complete."), "{stderr}");
+            saw_note = true;
+            break;
+        }
+    }
+    assert!(saw_note, "no run reported a clamped sample");
+}
+
+#[test]
+fn test_clamp_note_is_silent_without_verbose() {
+    for _ in 0..10 {
+        let output = dozr().args(["n", "0s", "10ms"]).output().unwrap();
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
 }

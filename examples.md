@@ -147,10 +147,10 @@ cat dozr_progress.log
 
 ### Normal Distribution
 
-Sample from a Normal distribution with a mean of 1 second and a standard deviation of 0.1 seconds:
+Sample from a Normal distribution with a mean of 1 second and a standard deviation of 100 milliseconds. Negative samples wait for zero:
 
 ```bash
-dozr n 1s 0.1
+dozr n 1s 100ms
 ```
 
 ### Exponential Distribution
@@ -163,18 +163,18 @@ dozr e 0.5
 
 ### Log-Normal Distribution
 
-Sample from a Log-Normal distribution whose waits average 1 second with a standard deviation of 0.5 seconds:
+Sample from a Log-Normal distribution whose waits average 1 second with a standard deviation of 500 milliseconds:
 
 ```bash
-dozr ln 1s 0.5
+dozr ln 1s 500ms
 ```
 
 ### Pareto Distribution
 
-Sample from a Pareto distribution with a scale of 1.0 and a shape of 2.0:
+Sample from a Pareto distribution with a minimum wait of 1 second and a shape of 2.0. Smaller shapes give a heavier tail of long waits:
 
 ```bash
-dozr par 1.0 2.0
+dozr par 1s 2.0
 ```
 
 ### Uniform Distribution
@@ -187,18 +187,18 @@ dozr u 1s 5s
 
 ### Triangular Distribution
 
-Sample from a Triangular distribution with a minimum of 0.0, a maximum of 10.0, and a mode of 5.0:
+Sample from a Triangular distribution between 0 and 10 seconds, most likely 5 seconds:
 
 ```bash
-dozr t 0.0 10.0 5.0
+dozr t 0s 10s 5s
 ```
 
 ### Gamma Distribution
 
-Sample from a Gamma distribution with a shape of 2.0 and a scale of 1.5:
+Sample from a Gamma distribution with a shape of 2.0 and a scale of 1.5 seconds, for a mean of 3 seconds:
 
 ```bash
-dozr g 2.0 1.5
+dozr g 2.0 1500ms
 ```
 
 ## Library Usage

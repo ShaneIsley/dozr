@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as 0.5.0. This release breaks the command line and the library API.
+
+### Changed
+- **Breaking:** every argument that is a length of time now needs a unit. `dozr n 1s 0.1` becomes `dozr n 1s 100ms`, and the same applies to the `log-normal` standard deviation, the Pareto and gamma scales, and all three `triangular` values. A bare number such as `0.1` is rejected with exit status 2. The exponential rate and the Pareto and gamma shapes stay bare numbers.
+- **Breaking:** `-v <PERIOD>` must be at least `1ms`. `-v 1ns` used to switch to adaptive updates by accident and is now rejected.
+- `-v <PERIOD>` prints an update on every period. Previously it only printed when the whole-second countdown changed, so `-v 250ms` looked the same as `-v 1s`. Periods under a second show tenths, such as `1.5s`.
+- The README describes verbose output as time-remaining updates. It previously promised a progress bar that never existed.
+- **Breaking (library):** the `WaitCondition` trait now has two required methods, `sample` and `verbose`. `sample` returns a `Sample` that records the duration and whether it was clamped or skipped. `wait` draws exactly one sample and hands it to a `Sleeper`. Use `wait_using` to substitute a sleeper in tests.
+- **Breaking (library):** `verbose` fields are now the `Verbose` enum (`Off`, `Adaptive`, `Every(period)`) instead of `Option<Duration>` with a `1ns` sentinel. Time-valued fields such as `NormalWait::std_dev`, `ParetoWait::scale`, `GammaWait::scale`, and the `TriangularWait` bounds are now `Duration`.
+- `verbose_wait` calls its display function on every tick with the exact remaining time.
+
+### Added
+- With `-v`, `dozr` reports when a sampled duration was negative and was clamped to zero.
+- Help text gives the unit of every argument and notes that negative `normal` samples wait for zero.
+- A bare number where a length of time is expected, including `-j` and `-v`, gets an error suggesting a unit, such as `a unit is required, for example 0.1s or 0.1ms`.
+
+### Removed
+- `Cli::is_adaptive_verbose` and `Cli::verbose_period`. Match on `Verbose` instead.
+
+## [0.4.2] - Not yet released
+
 ### Fixed
 - `-v <PERIOD>` no longer extends the wait when the period is longer than the remaining time (`dozr d 1s -v 10s` now takes 1 second, not 10).
 - `-p` / `--probability` now applies to every command. Previously it was silently ignored for everything except `duration`.
@@ -92,7 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adaptive ETA display with human-readable formatting
 - Support for duration units: seconds, minutes, hours, days, milliseconds
 
-[Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/ShaneIsley/dozr/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ShaneIsley/dozr/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ShaneIsley/dozr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ShaneIsley/dozr/compare/v0.2.0...v0.3.0

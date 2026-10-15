@@ -16,7 +16,8 @@ commands are included so each fix can be checked the same way.
 | T-3 | Done | Full suite runs in about 6 seconds. Every spawned process has a 15-second timeout so a regression fails instead of hanging. |
 | T-4 | Done | Format, Clippy, test, and docs gates, plus a build on Rust 1.85. |
 | P0-1 to P0-6 | Done | Deviations from the original wording are noted under each item. |
-| P1, P2, P3 | Not started | |
+| P1-1 to P1-6 | Done | P1-5 and P1-6 share one mechanism: `WaitCondition::sample` returns a `Sample` with clamped and skipped details, and every wait goes through a replaceable `Sleeper`. That is the sleep injection from P2-1, done early because both items need it. |
+| P2, P3 | Not started | |
 
 ## Priorities
 
@@ -278,8 +279,11 @@ with the precision of the period (`{:.1}s` when the period is under 1 s).
 Tests:
 
 - Integration: `dozr d 1s -v 250ms` prints at least 4 "Time remaining" lines.
+  (Implemented as `dozr d 1500ms -v 250ms`, six nominal updates, so
+  scheduling delay under parallel test load cannot drop it below four.)
 - Integration: `dozr d 3s -v 1s` prints at most 4 such lines (no regression
-  into spamming).
+  into spamming). (Implemented as `dozr d 2s -v 1s` printing two or three,
+  to keep the test under the 2-second budget.)
 
 ### P1-3. Parameter types are inconsistent across subcommands
 
@@ -310,7 +314,9 @@ custom value parser. Reject periods under 1 ms.
 Tests:
 
 - Unit: `-v` yields `Adaptive`; `-v 500ms` yields `Every(500ms)`; absence
-  yields `Off`.
+  yields `Off`. A bare `-v` placed before the subcommand takes the
+  subcommand name as its value, as it did in 0.4.1. The README now says to
+  put a bare `-v` after the command.
 - Integration: `-v 1ns` is rejected with exit code 2.
 - Delete `is_adaptive_verbose` and `verbose_period` and their tests.
 
@@ -334,7 +340,9 @@ Tests:
 the two trait methods can disagree.
 
 Fix: folded into P2-2. `wait` must use the duration returned by
-`calculate_wait_duration`.
+`calculate_wait_duration`. (Done in P1: `ProbabilisticWait` delegates to
+`ProbabilityGate`, and every `wait` draws one `Sample` and passes it to a
+`Sleeper`.)
 
 Tests:
 

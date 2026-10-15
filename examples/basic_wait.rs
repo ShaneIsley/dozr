@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use dozr::Verbose;
 use dozr::conditions::{DurationWait, WaitCondition};
 
 fn main() -> anyhow::Result<()> {
@@ -11,7 +12,7 @@ fn main() -> anyhow::Result<()> {
 
     let wait = DurationWait {
         duration: Duration::from_secs(2),
-        verbose: None,
+        verbose: Verbose::Off,
         jitter: None,
     };
 
@@ -24,7 +25,7 @@ fn main() -> anyhow::Result<()> {
 
     let wait_with_jitter = DurationWait {
         duration: Duration::from_secs(1),
-        verbose: None,
+        verbose: Verbose::Off,
         jitter: Some(Duration::from_millis(500)),
     };
 
