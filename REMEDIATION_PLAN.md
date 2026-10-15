@@ -8,6 +8,16 @@ the version it ships in.
 Findings were confirmed by running the 0.4.1 release binary; reproduction
 commands are included so each fix can be checked the same way.
 
+## Status
+
+| Item | State | Notes |
+| :--- | :--- | :--- |
+| T-1, T-2 | Done | RNG injected through `WaitCondition::sample_with`. Clock injected through `cli::duration_until` and `conditions::duration_to_next_alignment`. |
+| T-3 | Done | Full suite runs in about 6 seconds. Every spawned process has a 15-second timeout so a regression fails instead of hanging. |
+| T-4 | Done | Format, Clippy, test, and docs gates, plus a build on Rust 1.85. |
+| P0-1 to P0-6 | Done | Deviations from the original wording are noted under each item. |
+| P1, P2, P3 | Not started | |
+
 ## Priorities
 
 | Priority | Meaning | Target release |
@@ -123,7 +133,9 @@ P2-2 for the clean version; a stopgap is to apply the roll in
 Tests:
 
 - Integration, for each of the ten subcommands: `-p 0.0` exits in under
-  100 ms; with `-v` it prints "Skipping sleep".
+  1 s against a base wait of at least 5 s; with `-v` it prints "Skipping
+  sleep". (Implemented with a 1 s threshold rather than 100 ms, because
+  debug-binary start-up under parallel test load can approach 100 ms.)
 - Integration, for each subcommand: `-p 1.0` produces identical behaviour to
   omitting the flag (same stderr shape, elapsed time within the normal
   range).
@@ -145,8 +157,10 @@ regardless of whether a probability gate is present.
 Tests:
 
 - Unit (with injected RNG): `duration=100ms, jitter=3s, probability=1.0`
-  yields a duration strictly greater than 100 ms for a seed known to produce
-  non-zero jitter, and equal to the un-gated calculation for the same seed.
+  yields durations between 100 ms and 3.1 s over 200 seeded draws, with at
+  least one above 1 s. (The original "equal to the un-gated calculation for
+  the same seed" is not achievable because the gate's roll consumes the
+  first random number.)
 - Integration: five runs of `dozr d 10ms -j 500ms -p 1.0` produce at least
   two distinct elapsed times greater than 50 ms apart.
 
@@ -163,8 +177,10 @@ Cause: the parsed seconds are passed straight to `LogNormal::new(mu, sigma)`
 in `src/conditions.rs`, which takes the parameters of the underlying normal
 distribution.
 
-Fix: accept the requested mean `m` and standard deviation `s` (both as
-durations, see P1-3) and convert:
+Fix: accept the requested mean `m` and standard deviation `s` and convert.
+In 0.4.2 the standard deviation stays a bare number of seconds; P1-3 turns
+it into a duration. Implemented with `rand_distr::LogNormal::from_mean_cv`,
+which performs this conversion:
 
 ```text
 sigma² = ln(1 + (s/m)²)
@@ -215,17 +231,21 @@ Cause: `parse_time_until` in `src/cli.rs` sets hour, minute and second on a
 skipped hour (for example 02:30 on the spring-forward day) yields `None`.
 
 Fix: build a `NaiveDateTime` from today's date and the parsed time, then
-resolve it with `Local.from_local_datetime(..)` using `earliest()` and, when
-that is `None`, advance to the next valid instant. Ambiguous times (fall back)
-take the earliest.
+resolve it with `from_local_datetime(..)`. A time in a gap is shifted forward
+by the length of the gap, using the offset in force before it, so 02:30
+becomes 03:30. This matches `java.time` and JavaScript Temporal, and replaces
+the original "next valid instant" wording, which would have given 03:00.
+Ambiguous times (fall back) take the earliest occurrence that is not in the
+past, so the second 01:30 is used once the first has gone by.
 
 Tests:
 
 - Add `chrono-tz` as a dev-dependency. Unit tests with the clock injected
   (T-2) and the zone fixed to `America/New_York`:
   - 02:30 requested on the spring-forward date resolves without panicking
-    to the first valid instant after the gap.
-  - 01:30 requested on the fall-back date resolves to the earlier instant.
+    to 03:30 EDT.
+  - 01:30 requested on the fall-back date resolves to the earlier instant,
+    and to the later one when the earlier has already passed.
 - Existing rollover and "in the future" tests reworked to use the fixed
   clock.
 

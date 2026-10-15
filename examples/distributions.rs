@@ -4,9 +4,7 @@
 
 use std::time::Duration;
 
-use dozr::conditions::{
-    ExponentialWait, GammaWait, NormalWait, UniformWait, WaitCondition,
-};
+use dozr::conditions::{ExponentialWait, GammaWait, NormalWait, UniformWait, WaitCondition};
 
 fn main() -> anyhow::Result<()> {
     // Normal distribution: mean of 500ms, std dev of 100ms

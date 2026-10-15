@@ -115,12 +115,16 @@ dozr d 10s -v
 | `align` | `a`, `ali` | `<INTERVAL>` | `dozr a 1m` |
 | `at` | *(none)* | `<HH:MM[:SS]>` | `dozr at 22:30` |
 
+Bare numbers such as standard deviations, triangular values, and Pareto or gamma scales are in seconds. For `log-normal`, `<MEAN>` and `<STD_DEV>` describe the waits themselves, not the underlying normal distribution. Invalid parameters, such as a negative standard deviation or a uniform `<MIN>` above `<MAX>`, are rejected with exit status 2.
+
+If an `at` time falls in a daylight-saving gap, `dozr` waits until the same clock time after the clocks change (02:30 becomes 03:30). If it falls in a repeated hour, the first occurrence that is still in the future is used.
+
 ### Global Options
 
 | Full Option | Short | Value | Description |
 | :--- | :--- | :--- | :--- |
 | `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>`. Not applicable to `align` or `at`. |
-| `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. |
+| `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. Applies to every command and keeps any jitter. |
 | `--verbose` | `-v` | `[TIME]` | Shows progress. Can take an optional update interval (e.g., `-v 1s`). |
 | `--help` | `-h` | *(none)* | Displays the help message for the command. |
 | `--version` | `-V` | *(none)* | Displays the application version. |

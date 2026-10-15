@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use rand::rngs::ThreadRng;
-use rand_distr::{Distribution, Normal, Exp, LogNormal, Pareto, Uniform, Triangular, Gamma};
+use rand_distr::{Distribution, Exp, Gamma, Normal, Pareto, Triangular, Uniform};
 
 use std::time::Duration;
 
@@ -63,8 +63,6 @@ pub struct Cli {
     /// Scale parameter for Gamma distribution (e.g., "1.0").
     #[arg(long)]
     pub gamma_scale: Option<f64>,
-
-    
 }
 
 fn main() -> anyhow::Result<()> {
@@ -76,37 +74,66 @@ fn main() -> anyhow::Result<()> {
             "normal" => {
                 let mean_duration = args.mean.expect("Mean is required for normal distribution");
                 let mean_secs = mean_duration.as_secs_f64();
-                let std_dev = args.std_dev.expect("Standard deviation is required for normal distribution");
+                let std_dev = args
+                    .std_dev
+                    .expect("Standard deviation is required for normal distribution");
                 Normal::new(mean_secs, std_dev)?.sample(&mut rng)
             }
             "exponential" => {
-                let lambda = args.lambda.expect("Lambda is required for exponential distribution");
+                let lambda = args
+                    .lambda
+                    .expect("Lambda is required for exponential distribution");
                 Exp::new(lambda)?.sample(&mut rng)
             }
             "log_normal" => {
-                let mean_secs = args.mean.expect("Mean is required for log-normal distribution").as_secs_f64();
-                let std_dev = args.std_dev.expect("Standard deviation is required for log-normal distribution");
-                LogNormal::new(mean_secs, std_dev)?.sample(&mut rng)
+                let mean_secs = args
+                    .mean
+                    .expect("Mean is required for log-normal distribution")
+                    .as_secs_f64();
+                let std_dev = args
+                    .std_dev
+                    .expect("Standard deviation is required for log-normal distribution");
+                dozr::conditions::log_normal_from_mean_sd(mean_secs, std_dev)?.sample(&mut rng)
             }
             "pareto" => {
-                let scale = args.pareto_scale.expect("Scale is required for pareto distribution");
-                let shape = args.pareto_shape.expect("Shape is required for pareto distribution");
+                let scale = args
+                    .pareto_scale
+                    .expect("Scale is required for pareto distribution");
+                let shape = args
+                    .pareto_shape
+                    .expect("Shape is required for pareto distribution");
                 Pareto::new(scale, shape)?.sample(&mut rng)
             }
             "uniform" => {
-                let min_secs = args.min.expect("Min is required for uniform distribution").as_secs_f64();
-                let max_secs = args.max.expect("Max is required for uniform distribution").as_secs_f64();
+                let min_secs = args
+                    .min
+                    .expect("Min is required for uniform distribution")
+                    .as_secs_f64();
+                let max_secs = args
+                    .max
+                    .expect("Max is required for uniform distribution")
+                    .as_secs_f64();
                 Uniform::new(min_secs, max_secs)?.sample(&mut rng)
             }
             "triangular" => {
-                let min = args.triangular_min.expect("Min is required for triangular distribution");
-                let max = args.triangular_max.expect("Max is required for triangular distribution");
-                let mode = args.triangular_mode.expect("Mode is required for triangular distribution");
+                let min = args
+                    .triangular_min
+                    .expect("Min is required for triangular distribution");
+                let max = args
+                    .triangular_max
+                    .expect("Max is required for triangular distribution");
+                let mode = args
+                    .triangular_mode
+                    .expect("Mode is required for triangular distribution");
                 Triangular::new(min, max, mode)?.sample(&mut rng)
             }
             "gamma" => {
-                let shape = args.gamma_shape.expect("Shape is required for gamma distribution");
-                let scale = args.gamma_scale.expect("Scale is required for gamma distribution");
+                let shape = args
+                    .gamma_shape
+                    .expect("Shape is required for gamma distribution");
+                let scale = args
+                    .gamma_scale
+                    .expect("Scale is required for gamma distribution");
                 Gamma::new(shape, scale)?.sample(&mut rng)
             }
             _ => panic!("Unsupported distribution type"),

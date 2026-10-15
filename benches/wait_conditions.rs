@@ -7,10 +7,10 @@
 
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use dozr::conditions::{
-    DurationWait, ExponentialWait, GammaWait, LogNormalWait, NormalWait,
-    ParetoWait, TriangularWait, UniformWait, WaitCondition,
+    DurationWait, ExponentialWait, GammaWait, LogNormalWait, NormalWait, ParetoWait,
+    TriangularWait, UniformWait, WaitCondition,
 };
 
 fn bench_duration_calculation(c: &mut Criterion) {

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `-v <PERIOD>` no longer extends the wait when the period is longer than the remaining time (`dozr d 1s -v 10s` now takes 1 second, not 10).
+- `-p` / `--probability` now applies to every command. Previously it was silently ignored for everything except `duration`.
+- `-j` / `--jitter` is no longer dropped when `-p` is also given.
+- `log-normal` now treats `<MEAN>` and `<STD_DEV>` as the mean and standard deviation of the waits. Previously they were passed as the parameters of the underlying normal distribution, so `dozr ln 1s 0.5` averaged about 3.1 seconds instead of 1. **Behaviour change:** scripts that relied on the old meaning will now wait for different durations. `dist_sampler` uses the same meaning.
+- `at` no longer panics when the requested time falls inside a daylight-saving gap.
+- `-p 0.0` can no longer wait on a zero roll.
+
+### Changed
+- Invalid parameters are rejected at parse time with exit status 2 and an error naming the argument: probability outside 0.0-1.0, negative standard deviations, non-positive exponential rate, Pareto and gamma parameters, log-normal mean, and `align` interval, a uniform `<MIN>` not below `<MAX>`, and a triangular `<MODE>` outside `<MIN>`-`<MAX>`. Negative numbers are now read as values, so `dozr e -0.5` reports the bad rate rather than an unknown flag.
+- `ProbabilisticWait` is deprecated in favour of `ProbabilityGate`, which wraps any `WaitCondition`.
+
+### Added
+- `WaitCondition::sample_with` takes a caller-supplied random number generator, so library users can get reproducible durations from a seeded generator.
+- `conditions::log_normal_from_mean_sd`, `conditions::duration_to_next_alignment`, and `cli::duration_until` expose the underlying calculations for testing and reuse.
+- CI now checks formatting, Clippy with warnings denied, documentation, and a build on the minimum supported Rust version, 1.85.
+- Statistical tests for every distribution, daylight-saving tests for `at`, and end-to-end tests for each fix above. The full suite runs in under 10 seconds.
+
 ## [0.4.1] - 2025-12-18
 
 ### Added

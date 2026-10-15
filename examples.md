@@ -100,7 +100,7 @@ dozr at 14:30:00 -v
 
 Execute a wait with a given probability. Use this to simulate intermittent delays or for chaos engineering.
 
-Wait for 5 seconds with a 50% chance:
+Wait for 5 seconds with a 50% chance. The `-p` option works with every command, and any `-j` jitter still applies when the wait happens:
 
 ```bash
 dozr d 5s -p 0.5
@@ -147,7 +147,7 @@ cat dozr_progress.log
 
 ### Normal Distribution
 
-Sample from a Normal distribution with a mean of 1 second and a standard deviation of 0.1:
+Sample from a Normal distribution with a mean of 1 second and a standard deviation of 0.1 seconds:
 
 ```bash
 dozr n 1s 0.1
@@ -163,7 +163,7 @@ dozr e 0.5
 
 ### Log-Normal Distribution
 
-Sample from a Log-Normal distribution with a mean of 1 second and a standard deviation of 0.5:
+Sample from a Log-Normal distribution whose waits average 1 second with a standard deviation of 0.5 seconds:
 
 ```bash
 dozr ln 1s 0.5

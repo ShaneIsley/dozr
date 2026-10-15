@@ -1,107 +1,231 @@
+//! End-to-end tests that run the `dozr` binary.
+//!
+//! Keep every test's total sleeping under 2 seconds so the suite stays fast.
+
 use assert_cmd::Command;
+use dozr::cli::{Cli, Commands};
 use predicates::prelude::{Predicate, PredicateBooleanExt};
 use predicates::str;
-use std::time::Instant;
-use std::time::Duration;
-use dozr::cli::{Cli, Commands};
+use std::process::Output;
+use std::time::{Duration, Instant};
 
-pub fn default_cli_args() -> Cli {
+/// Upper bound on any single dozr run, so a regression fails instead of hanging.
+const RUN_TIMEOUT: Duration = Duration::from_secs(15);
+
+fn dozr() -> Command {
+    let mut cmd = Command::cargo_bin("dozr").unwrap();
+    cmd.timeout(RUN_TIMEOUT);
+    cmd
+}
+
+/// Runs dozr with `args`, returning how long it took and its output.
+fn timed(args: &[&str]) -> (Duration, Output) {
+    let start = Instant::now();
+    let output = dozr().args(args).output().unwrap();
+    (start.elapsed(), output)
+}
+
+/// Wall-clock time `offset` from now, formatted for the `at` subcommand.
+fn clock_in(offset: chrono::Duration, format: &str) -> String {
+    (chrono::Local::now() + offset).format(format).to_string()
+}
+
+/// Arguments for each subcommand that would wait for several seconds or more.
+fn long_wait_commands() -> Vec<Vec<String>> {
+    let at = clock_in(chrono::Duration::hours(1), "%H:%M");
+    [
+        vec!["d", "5s"],
+        vec!["n", "5s", "0.1"],
+        vec!["e", "0.01"],
+        vec!["ln", "5s", "0.1"],
+        vec!["par", "5", "2"],
+        vec!["u", "5s", "6s"],
+        vec!["t", "5", "6", "5.5"],
+        vec!["g", "50", "0.2"],
+        vec!["a", "1h"],
+        vec!["at", at.as_str()],
+    ]
+    .into_iter()
+    .map(|v| v.into_iter().map(String::from).collect())
+    .collect()
+}
+
+/// Arguments for each subcommand that wait for at most about two seconds.
+///
+/// The `at` target is computed lazily, when the iterator reaches it, so the
+/// commands run before it in a loop cannot push it into the past.
+fn short_wait_commands() -> impl Iterator<Item = Vec<String>> {
+    [
+        vec!["d", "10ms"],
+        vec!["n", "10ms", "0.001"],
+        vec!["e", "100"],
+        vec!["ln", "10ms", "0.001"],
+        vec!["par", "0.01", "5"],
+        vec!["u", "1ms", "10ms"],
+        vec!["t", "0", "0.02", "0.01"],
+        vec!["g", "2", "0.005"],
+        vec!["a", "100ms"],
+    ]
+    .into_iter()
+    .map(|v| v.into_iter().map(String::from).collect())
+    .chain(std::iter::once_with(|| {
+        vec![
+            "at".to_string(),
+            clock_in(chrono::Duration::seconds(2), "%H:%M:%S"),
+        ]
+    }))
+}
+
+fn with_args(base: &[String], extra: &[&str]) -> Vec<String> {
+    base.iter()
+        .cloned()
+        .chain(extra.iter().map(|s| s.to_string()))
+        .collect()
+}
+
+fn as_strs(v: &[String]) -> Vec<&str> {
+    v.iter().map(String::as_str).collect()
+}
+
+fn default_cli_args() -> Cli {
     Cli {
-        command: Commands::Duration { time: Duration::from_secs(0) },
+        command: Commands::Duration {
+            time: Duration::from_secs(0),
+        },
         jitter: None,
         verbose: None,
         probability: None,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Basic behaviour
+// ---------------------------------------------------------------------------
 
+#[test]
+fn test_duration_is_valid() {
+    dozr().args(["d", "10ms"]).assert().success();
+}
 
 #[test]
 fn test_jitter_flag_accepts_argument() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "0s", "--jitter", "0s"])
+    dozr()
+        .args(["d", "0s", "--jitter", "0s"])
         .assert()
         .success();
 }
 
 #[test]
 fn test_jitter_adds_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    // We use a small base duration and a small jitter to keep the test fast.
-    // The key is verifying that *some* extra time was added.
-    cmd.args(&["d", "100ms", "--jitter", "200ms"])
-        .assert()
-        .success();
-    let duration = start.elapsed();
-
-    // Assert that the command took at least the base duration.
-    assert!(duration.as_millis() >= 100);
-    // Assert that the command did not take longer than the base + max jitter + a generous buffer for overhead.
-    assert!(duration.as_millis() <= 1500);
+    let (elapsed, output) = timed(&["d", "100ms", "--jitter", "200ms"]);
+    assert!(output.status.success());
+    assert!(elapsed >= Duration::from_millis(100));
+    assert!(elapsed <= Duration::from_millis(1_500));
 }
 
 #[test]
 fn test_verbose_output_includes_eta() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Use a duration long enough to ensure multiple ETA updates
-    cmd.args(&["d", "2s", "-v"])
+    dozr()
+        .args(["d", "1500ms", "-v"])
         .assert()
         .success()
-        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
+        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("Wait complete.")));
 }
 
 #[test]
 fn test_verbose_custom_update_period() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Test with a 1.5s wait and 500ms update period.
-    let assert = cmd
-        .args(&["d", "1s500ms", "-v", "500ms"])
+    dozr()
+        .args(["d", "1s500ms", "-v", "500ms"])
         .assert()
-        .success();
-    let output = assert.get_output();
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
+        .success()
+        .stderr(str::contains("[DOZR] Time remaining:"));
 }
 
 #[test]
 fn test_verbose_adaptive_short_wait() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Test with a 5s wait - falls in 0-20s bucket (1s update period)
-    let assert = cmd
-        .args(&["d", "5s", "-v"])
-        .assert()
-        .success();
-    let output = assert.get_output();
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-    // Should have multiple 1-second updates
-    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
+    let (elapsed, output) = timed(&["d", "2s", "-v"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success());
+    assert!(
+        stderr.matches("[DOZR] Time remaining:").count() >= 2,
+        "{stderr}"
+    );
+    assert!(elapsed < Duration::from_millis(2_500));
 }
 
 #[test]
-fn test_verbose_adaptive_long_wait() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Test with a 21s wait - falls in 21-60s bucket (5s update period)
-    let assert = cmd
-        .args(&["d", "21s", "-v"])
+fn test_time_align_verbose_output() {
+    dozr()
+        .args(["a", "1s", "-v"])
         .assert()
-        .success();
-    let output = assert.get_output();
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-    // Should have updates at 5-second intervals
-    assert!(str::contains("[DOZR] Time remaining:").eval(&stderr_str));
+        .success()
+        .stderr(str::contains("Wait complete."));
 }
+
+#[test]
+fn test_until_time_verbose_output() {
+    let target = clock_in(chrono::Duration::seconds(2), "%H:%M:%S");
+    dozr()
+        .args(["at", &target, "-v"])
+        .assert()
+        .success()
+        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("Wait complete.")));
+}
+
+#[test]
+fn test_until_time_in_future() {
+    let target = clock_in(chrono::Duration::seconds(2), "%H:%M:%S");
+    let (elapsed, output) = timed(&["at", &target]);
+    assert!(output.status.success());
+    // HH:MM:SS truncates sub-second precision, so the wait is 1-2 seconds.
+    assert!(elapsed >= Duration::from_millis(900), "{elapsed:?}");
+    assert!(elapsed <= Duration::from_secs(3), "{elapsed:?}");
+}
+
+#[test]
+fn test_parse_time_until_hh_mm() {
+    // An HH:MM target would make this test wait minutes, so skip the wait
+    // with -p 0 and only check that the format is accepted.
+    let target = clock_in(chrono::Duration::hours(1), "%H:%M");
+    dozr().args(["at", &target, "-p", "0"]).assert().success();
+}
+
+#[test]
+fn test_distribution_waits_complete_quickly() {
+    for args in short_wait_commands() {
+        let (elapsed, output) = timed(&as_strs(&args));
+        assert!(output.status.success(), "{args:?} failed: {output:?}");
+        assert!(
+            elapsed < Duration::from_millis(2_500),
+            "{args:?} took {elapsed:?}"
+        );
+    }
+}
+
+#[test]
+fn test_triangular_distribution_wait_time() {
+    let (elapsed, output) = timed(&["t", "0.1", "0.5", "0.2"]);
+    assert!(output.status.success());
+    assert!(elapsed >= Duration::from_millis(100));
+    assert!(elapsed < Duration::from_secs(1));
+}
+
+#[test]
+fn test_normal_distribution_wait_time() {
+    let (elapsed, output) = timed(&["n", "200ms", "0.01"]);
+    assert!(output.status.success());
+    assert!(elapsed >= Duration::from_millis(150));
+    assert!(elapsed < Duration::from_secs(1));
+}
+
+// ---------------------------------------------------------------------------
+// Argument errors
+// ---------------------------------------------------------------------------
 
 #[test]
 fn test_invalid_duration_arg() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "invalid-duration"])
+    dozr()
+        .args(["d", "invalid-duration"])
         .assert()
         .failure()
         .stderr(str::contains("error: invalid value"));
@@ -109,8 +233,8 @@ fn test_invalid_duration_arg() {
 
 #[test]
 fn test_invalid_jitter_arg() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "-j", "invalid-jitter"])
+    dozr()
+        .args(["d", "1s", "-j", "invalid-jitter"])
         .assert()
         .failure()
         .stderr(str::contains("error: invalid value"));
@@ -118,8 +242,8 @@ fn test_invalid_jitter_arg() {
 
 #[test]
 fn test_invalid_verbose_period_arg() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "-v", "invalid-period"])
+    dozr()
+        .args(["d", "1s", "-v", "invalid-period"])
         .assert()
         .failure()
         .stderr(str::contains("error: invalid value"));
@@ -127,243 +251,34 @@ fn test_invalid_verbose_period_arg() {
 
 #[test]
 fn test_duration_and_align_are_mutually_exclusive() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "a", "5s"])
+    dozr()
+        .args(["d", "1s", "a", "5s"])
         .assert()
         .failure()
         .stderr(str::contains("error: unexpected argument 'a' found"));
 }
 
 #[test]
-fn test_duration_or_align_is_required() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.assert().failure().stderr(str::contains(
-        "Usage: dozr [OPTIONS] <COMMAND>"
-    ));
-}
-
-#[test]
-fn test_duration_is_valid() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s"]).assert().success();
-}
-
-#[test]
-fn test_time_align_verbose_output() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["a", "5s", "-v"])
-        .assert()
-        .success()
-        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
-}
-
-#[test]
-fn test_probabilistic_wait_verbose_output() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "-p", "1.0", "-v"])
-        .assert()
-        .success()
-        .stderr(str::contains("[DOZR] Time remaining:").or(str::contains("Skipping sleep")));
-}
-
-#[test]
-fn test_probabilistic_wait_skip_verbose_output() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "-p", "0.0", "-v"])
-        .assert()
-        .success()
-        .stderr(str::contains("Skipping sleep"));
-}
-
-#[test]
-fn test_jitter_zero_duration() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "-j", "0s"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_until_time_verbose_output() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    // Set a time in the near future (e.g., 5 seconds from now)
-    let now = chrono::Local::now();
-    let target_time = now + chrono::Duration::seconds(5);
-    let target_time_str = target_time.format("%H:%M:%S").to_string();
-
-    cmd.args(&["at", &target_time_str, "-v"])
-        .assert()
-        .success()
-        .stderr(str::contains("[DOZR] Time remaining:").and(str::contains("s")));
-}
-
-#[test]
-fn test_invalid_until_time_format() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["at", "invalid-time"])
-        .assert()
-        .failure()
-        .stderr(str::contains("Invalid time format"));
-}
-
-#[test]
-fn test_invalid_until_time_hour() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["at", "25:00"])
-        .assert()
-        .failure()
-        .stderr(str::contains("Invalid time format"));
-}
-
-#[test]
-fn test_invalid_until_time_minute() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["at", "10:65"])
-        .assert()
-        .failure()
-        .stderr(str::contains("Invalid time format"));
-}
-
-#[test]
-fn test_until_time_in_future() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let now = chrono::Local::now();
-    let target_time = now + chrono::Duration::seconds(2);
-    let target_time_str = target_time.format("%H:%M:%S").to_string();
-
-    let start_time = Instant::now();
-    cmd.args(&["at", &target_time_str]).assert().success();
-    let elapsed = start_time.elapsed();
-
-    assert!(elapsed >= chrono::Duration::seconds(1).to_std().unwrap());
-    assert!(elapsed <= chrono::Duration::seconds(3).to_std().unwrap());
-}
-
-#[test]
-fn test_parse_time_until_hh_mm() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let now = chrono::Local::now();
-    let target_time = now + chrono::Duration::minutes(1);
-    let target_time_str = target_time.format("%H:%M").to_string();
-
-    cmd.args(&["at", &target_time_str]).assert().success();
-}
-
-// New tests for Cli helper methods
-#[test]
-fn test_is_adaptive_verbose() {
-    // Adaptive verbose (1ns sentinel)
-    let cli_adaptive = {
-        let mut cli = default_cli_args();
-        cli.verbose = Some(Duration::from_nanos(1));
-        cli
-    };
-    assert!(cli_adaptive.is_adaptive_verbose());
-
-    // Fixed verbose (e.g., 1s)
-    let cli_fixed = {
-        let mut cli = default_cli_args();
-        cli.verbose = Some(Duration::from_secs(1));
-        cli
-    };
-    assert!(!cli_fixed.is_adaptive_verbose());
-
-    // No verbose
-    let cli_none = default_cli_args();
-    assert!(!cli_none.is_adaptive_verbose());
-}
-
-#[test]
-fn test_verbose_period() {
-    // Adaptive verbose (1ns sentinel) -> Should return None
-    let cli_adaptive = {
-        let mut cli = default_cli_args();
-        cli.verbose = Some(Duration::from_nanos(1));
-        cli
-    };
-    assert_eq!(cli_adaptive.verbose_period(), None);
-
-    // Fixed verbose (e.g., 1s) -> Should return Some(1s)
-    let cli_fixed = {
-        let mut cli = default_cli_args();
-        cli.verbose = Some(Duration::from_secs(1));
-        cli
-    };
-    assert_eq!(cli_fixed.verbose_period(), Some(Duration::from_secs(1)));
-
-    // No verbose -> Should return None
-    let cli_none = default_cli_args();
-    assert_eq!(cli_none.verbose_period(), None);
-}
-
-#[test]
-fn test_triangular_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["t", "0.0", "1.0", "0.5"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_triangular_distribution_wait_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    cmd.args(&["t", "0.1", "0.5", "0.2"])
-        .assert()
-        .success();
-    let elapsed = start.elapsed();
-    // Triangular distribution with min=0.1, max=0.5, mode=0.2. Allow a broad range.
-    assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(1));
-}
-
-#[test]
-fn test_normal_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["n", "1s", "0.1"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_exponential_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["e", "0.5"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_log_normal_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["ln", "1s", "0.1"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_pareto_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["par", "1.0", "1.5"])
-        .assert()
-        .success();
-}
-
-
-
-#[test]
 fn test_mutually_exclusive_distribution_args() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["d", "1s", "n", "1s", "0.1"])
+    dozr()
+        .args(["d", "1s", "n", "1s", "0.1"])
         .assert()
         .failure()
         .stderr(str::contains("error: unexpected argument 'n' found"));
 }
 
 #[test]
+fn test_duration_or_align_is_required() {
+    dozr()
+        .assert()
+        .failure()
+        .stderr(str::contains("Usage: dozr [OPTIONS] <COMMAND>"));
+}
+
+#[test]
 fn test_normal_distribution_missing_param() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["n", "1s"])
+    dozr()
+        .args(["n", "1s"])
         .assert()
         .failure()
         .stderr(str::contains("required arguments were not provided"));
@@ -371,71 +286,196 @@ fn test_normal_distribution_missing_param() {
 
 #[test]
 fn test_normal_distribution_missing_all_params() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["n"])
+    dozr()
+        .args(["n"])
         .assert()
         .failure()
         .stderr(str::contains("required arguments were not provided"));
 }
 
 #[test]
-fn test_exponential_distribution_invalid_lambda() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    cmd.args(&["e", "-0.5"])
+fn test_invalid_until_time_format() {
+    dozr()
+        .args(["at", "invalid-time"])
         .assert()
         .failure()
-        .stderr(str::contains("error: unexpected argument '-0' found"));
+        .stderr(str::contains("Invalid time format"));
 }
 
 #[test]
-fn test_normal_distribution_wait_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    cmd.args(&["n", "1s", "0.1"])
+fn test_invalid_until_time_hour() {
+    dozr()
+        .args(["at", "25:00"])
         .assert()
-        .success();
-    let elapsed = start.elapsed();
-    // Assert that the elapsed time is greater than 0 and within a reasonable range (e.g., 0.5s to 2s)
-    assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(2));
+        .failure()
+        .stderr(str::contains("Invalid time format"));
 }
 
 #[test]
-fn test_exponential_distribution_wait_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    cmd.args(&["e", "1.0"])
+fn test_invalid_until_time_minute() {
+    dozr()
+        .args(["at", "10:65"])
         .assert()
-        .success();
-    let elapsed = start.elapsed();
-    // Exponential distribution with lambda=1.0 has a mean of 1.0. Allow a broad range.
-    assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(10));
+        .failure()
+        .stderr(str::contains("Invalid time format"));
+}
+
+// ---------------------------------------------------------------------------
+// P0-1: a fixed verbose period longer than the wait must not extend it
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_verbose_period_longer_than_wait_does_not_overshoot() {
+    let (elapsed, output) = timed(&["d", "200ms", "-v", "10s"]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Wait complete."));
+    assert!(elapsed < Duration::from_secs(1), "took {elapsed:?}");
+}
+
+// ---------------------------------------------------------------------------
+// P0-2: --probability applies to every subcommand
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_probability_zero_skips_every_subcommand() {
+    for args in long_wait_commands() {
+        let args = with_args(&args, &["-p", "0.0", "-v"]);
+        let (elapsed, output) = timed(&as_strs(&args));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{args:?} failed: {stderr}");
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "{args:?} took {elapsed:?}; probability was ignored"
+        );
+        assert!(stderr.contains("Skipping sleep"), "{args:?}: {stderr}");
+    }
 }
 
 #[test]
-fn test_log_normal_distribution_wait_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    cmd.args(&["ln", "1s", "0.5"])
-        .assert()
-        .success();
-    let elapsed = start.elapsed();
-    // Log-Normal distribution with mean=1s, std_dev=0.5. Allow a broad range.
-    assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(10));
+fn test_probability_one_waits_for_every_subcommand() {
+    for args in short_wait_commands() {
+        let args = with_args(&args, &["-p", "1.0", "-v"]);
+        let output = dozr().args(&args).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{args:?} failed: {stderr}");
+        assert!(stderr.contains("Wait complete."), "{args:?}: {stderr}");
+        assert!(!stderr.contains("Skipping sleep"), "{args:?}: {stderr}");
+    }
 }
 
 #[test]
-fn test_pareto_distribution_wait_time() {
-    let mut cmd = Command::cargo_bin("dozr").unwrap();
-    let start = Instant::now();
-    cmd.args(&["par", "1.0", "2.0"])
+fn test_probabilistic_wait_skip_verbose_output() {
+    dozr()
+        .args(["d", "1s", "-p", "0.0", "-v"])
         .assert()
-        .success();
-    let elapsed = start.elapsed();
-    // Pareto distribution with scale=1.0, shape=2.0. Allow a broad range.
-    assert!(elapsed > Duration::from_millis(0));
-    assert!(elapsed < Duration::from_secs(10));
+        .success()
+        .stderr(str::contains("Skipping sleep"));
 }
 
+// ---------------------------------------------------------------------------
+// P0-3: --jitter still applies when --probability is given
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_jitter_applies_with_probability() {
+    // Each run has a 1-in-5 chance of drawing under 100ms of jitter, so the
+    // chance that all five do is 0.2^5, about 0.03%.
+    let longest = (0..5)
+        .map(|_| {
+            let (elapsed, output) = timed(&["d", "10ms", "-j", "500ms", "-p", "1.0"]);
+            assert!(output.status.success());
+            elapsed
+        })
+        .max()
+        .unwrap();
+    assert!(
+        longest > Duration::from_millis(110),
+        "longest run was {longest:?}; jitter appears to be dropped"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P0-5: invalid parameters are rejected at parse time with exit code 2
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_invalid_parameters_exit_2_and_name_the_argument() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["d", "0s", "-p", "7"], "--probability"),
+        (&["d", "0s", "-p", "-0.1"], "--probability"),
+        (&["n", "1s", "-1"], "<STD_DEV>"),
+        (&["ln", "1s", "-1"], "<STD_DEV>"),
+        (&["ln", "0s", "0.1"], "<MEAN>"),
+        (&["e", "0"], "<LAMBDA>"),
+        (&["e", "-0.5"], "<LAMBDA>"),
+        (&["par", "0", "1"], "<SCALE>"),
+        (&["par", "1", "0"], "<SHAPE>"),
+        (&["g", "0", "1"], "<SHAPE>"),
+        (&["g", "1", "0"], "<SCALE>"),
+        (&["u", "5s", "1s"], "<MIN>"),
+        (&["u", "1s", "1s"], "<MIN>"),
+        (&["t", "0", "1", "2"], "<MODE>"),
+        (&["t", "1", "1", "1"], "<MIN>"),
+        (&["a", "0s"], "<INTERVAL>"),
+    ];
+    for (args, names) in cases {
+        let output = dozr().args(*args).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {stderr}");
+        assert!(stderr.contains("error:"), "{args:?}: {stderr}");
+        assert!(
+            stderr.contains(names),
+            "{args:?} should name {names}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn test_boundary_parameters_are_accepted() {
+    let cases: &[&[&str]] = &[
+        &["d", "10ms", "-p", "0.0"],
+        &["d", "10ms", "-p", "1.0"],
+        &["n", "10ms", "0"],
+        &["ln", "10ms", "0"],
+        &["t", "0", "0.01", "0"],
+        &["t", "0", "0.01", "0.01"],
+    ];
+    for args in cases {
+        dozr().args(*args).assert().success();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cli helper methods
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_is_adaptive_verbose() {
+    let mut cli = default_cli_args();
+    cli.verbose = Some(Duration::from_nanos(1));
+    assert!(cli.is_adaptive_verbose());
+
+    cli.verbose = Some(Duration::from_secs(1));
+    assert!(!cli.is_adaptive_verbose());
+
+    assert!(!default_cli_args().is_adaptive_verbose());
+}
+
+#[test]
+fn test_verbose_period() {
+    let mut cli = default_cli_args();
+    cli.verbose = Some(Duration::from_nanos(1));
+    assert_eq!(cli.verbose_period(), None);
+
+    cli.verbose = Some(Duration::from_secs(1));
+    assert_eq!(cli.verbose_period(), Some(Duration::from_secs(1)));
+
+    assert_eq!(default_cli_args().verbose_period(), None);
+}
+
+#[test]
+fn test_skip_message_is_only_shown_when_verbose() {
+    let output = dozr().args(["d", "1s", "-p", "0"]).output().unwrap();
+    assert!(output.status.success());
+    assert!(!str::contains("Skipping sleep").eval(&String::from_utf8_lossy(&output.stderr)));
+}
