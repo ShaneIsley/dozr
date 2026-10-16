@@ -19,7 +19,9 @@
 *   **Time-Based Waits**: Pause until a specific time of day (e.g., `22:30:00`).
 *   **Alignment**: Align the wait to the next even interval (e.g., `1m`, `30s`).
 *   **Jitter**: Add a random duration of jitter to the wait.
-*   **Probabilistic Waits**: Wait only with a certain probability.
+*   **Probabilistic Waits**: Wait only with a certain probability, and optionally exit with a chosen status when the wait is skipped.
+*   **Bounds**: Keep any sampled wait between a floor and a ceiling.
+*   **Scripting**: Print the chosen duration instead of waiting, and seed the randomness for repeatable runs.
 *   **Verbose Output**: Print timestamped time-remaining updates to stderr.
 
 ## Installation
@@ -47,6 +49,8 @@ cargo install dozr
 | **Jitter** | No | Yes (`dozr d 10s -j 1s`) |
 | **Probabilistic Wait** | No | Yes (`dozr d 30s -p 0.5`) |
 | **Verbose Output** | No | Yes (`dozr d 10s -v`) |
+| **Bounds** | No | Yes (`dozr par 1s 1.5 --max 30s`) |
+| **Dry Run** | No | Yes (`dozr n 1s 200ms --dry-run`) |
 
 ### Basic Usage
 
@@ -128,6 +132,11 @@ If an `at` time falls in a daylight-saving gap, `dozr` waits until the same cloc
 | `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>` to any command. With `align` or `at`, the wait ends up to `<TIME>` after the boundary or clock time. |
 | `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. Applies to every command and keeps any jitter. |
 | `--verbose` | `-v` | `[TIME]` | Prints progress to stderr. Without a value, updates are adaptive. With a period of at least `1ms`, such as `-v 250ms`, an update is printed every period. Put a bare `-v` after the command. Before the command, it reads the command name as its period. |
+| `--min` | | `<TIME>` | Never waits less than `<TIME>`, after jitter. A skipped probabilistic wait is still skipped. |
+| `--max` | | `<TIME>` | Never waits more than `<TIME>`, after jitter. Useful for taming the Pareto tail. |
+| `--seed` | | `<SEED>` | Seeds the random number generator, so the same arguments always pick the same duration. |
+| `--dry-run` | | *(none)* | Prints the chosen duration, such as `1s 250ms`, to stdout instead of waiting. A skipped wait prints `0s`. The `duration` command accepts the output back. |
+| `--skip-exit-code` | | `<STATUS>` | Exits with `<STATUS>` when a `-p` wait is skipped. The default is 0. Statuses 1 and 2 also mean errors, so 3 or above is clearest. |
 | `--help` | `-h` | *(none)* | Displays the help message for the command. |
 | `--version` | `-V` | *(none)* | Displays the application version. |
 

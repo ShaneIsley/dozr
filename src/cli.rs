@@ -108,6 +108,39 @@ pub struct Cli {
     /// Wait only with a certain probability (0.0 to 1.0).
     #[arg(short, long, global = true, value_parser = parse_probability, allow_negative_numbers = true)]
     pub probability: Option<f64>,
+
+    /// Never wait less than this (e.g., "500ms"), after jitter.
+    // Ids differ from the uniform and triangular <MIN>/<MAX> arguments,
+    // which clap would otherwise reject as duplicates.
+    #[arg(id = "floor", long = "min", value_name = "TIME", value_parser = parse_time, global = true)]
+    pub min: Option<Duration>,
+
+    /// Never wait more than this (e.g., "30s"), after jitter.
+    #[arg(id = "ceiling", long = "max", value_name = "TIME", value_parser = parse_time, global = true)]
+    pub max: Option<Duration>,
+
+    /// Seed the random number generator, so the same arguments always pick
+    /// the same duration.
+    #[arg(long, value_name = "SEED", global = true)]
+    pub seed: Option<u64>,
+
+    /// Print the chosen duration (e.g., "1s 250ms") instead of waiting.
+    #[arg(long, global = true)]
+    pub dry_run: bool,
+
+    /// Exit with this status when a --probability wait is skipped.
+    /// Statuses 1 and 2 also mean errors, so 3 or above is clearest.
+    #[arg(long, value_name = "STATUS", default_value_t = 0, global = true)]
+    pub skip_exit_code: u8,
+}
+
+/// How to carry out a wait: everything on the command line that is not part
+/// of the [`Wait`] itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunOptions {
+    pub seed: Option<u64>,
+    pub dry_run: bool,
+    pub skip_exit_code: u8,
 }
 
 /// Every argument that is a length of time takes a value such as `500ms`,
@@ -232,12 +265,25 @@ impl Commands {
 impl Cli {
     /// The wait these arguments describe. Call [`Wait::validate`] before use.
     pub fn into_wait(self) -> Wait {
-        Wait {
+        self.into_parts().0
+    }
+
+    /// The wait these arguments describe, and how to run it.
+    pub fn into_parts(self) -> (Wait, RunOptions) {
+        let wait = Wait {
             sampler: self.command.into_sampler(),
             jitter: self.jitter,
             probability: self.probability,
+            min: self.min,
+            max: self.max,
             verbose: self.verbose,
-        }
+        };
+        let options = RunOptions {
+            seed: self.seed,
+            dry_run: self.dry_run,
+            skip_exit_code: self.skip_exit_code,
+        };
+        (wait, options)
     }
 }
 
@@ -307,9 +353,70 @@ mod tests {
                 },
                 jitter: Some(Duration::from_millis(50)),
                 probability: Some(0.5),
+                min: None,
+                max: None,
                 verbose: Verbose::Every(Duration::from_millis(250)),
             }
         );
+    }
+
+    #[test]
+    fn test_run_options_and_bounds() {
+        let (wait, options) = parse(&[
+            "u",
+            "1s",
+            "5s",
+            "--min",
+            "2s",
+            "--max",
+            "4s",
+            "--seed",
+            "7",
+            "--dry-run",
+            "--skip-exit-code",
+            "3",
+        ])
+        .unwrap()
+        .into_parts();
+        // --min/--max do not collide with the uniform <MIN>/<MAX>.
+        assert_eq!(
+            wait.sampler,
+            Sampler::Uniform {
+                min: Duration::from_secs(1),
+                max: Duration::from_secs(5),
+            }
+        );
+        assert_eq!(wait.min, Some(Duration::from_secs(2)));
+        assert_eq!(wait.max, Some(Duration::from_secs(4)));
+        assert_eq!(
+            options,
+            RunOptions {
+                seed: Some(7),
+                dry_run: true,
+                skip_exit_code: 3,
+            }
+        );
+
+        let (_, defaults) = parse(&["d", "1s"]).unwrap().into_parts();
+        assert_eq!(
+            defaults,
+            RunOptions {
+                seed: None,
+                dry_run: false,
+                skip_exit_code: 0,
+            }
+        );
+
+        // Global options work before the subcommand too.
+        let (wait, options) = parse(&["--seed", "1", "--max", "1s", "t", "0s", "2s", "1s"])
+            .unwrap()
+            .into_parts();
+        assert_eq!(wait.max, Some(Duration::from_secs(1)));
+        assert_eq!(options.seed, Some(1));
+
+        assert!(parse(&["d", "1s", "--min", "2"]).is_err());
+        assert!(parse(&["d", "1s", "--skip-exit-code", "256"]).is_err());
+        assert!(parse(&["d", "1s", "--seed", "-1"]).is_err());
     }
 
     #[test]

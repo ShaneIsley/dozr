@@ -149,6 +149,56 @@ dozr d 1m -j 5s -v 2> dozr_progress.log
 cat dozr_progress.log
 ```
 
+## Scripting
+
+### Bounding a Wait
+
+Keep a heavy-tailed wait between 2 and 30 seconds. With `-v`, `dozr` says when a bound changed the wait:
+
+```bash
+dozr par 1s 1.5 --min 2s --max 30s -v
+```
+
+### Previewing a Wait
+
+Print the duration `dozr` would pick, without waiting:
+
+```bash
+dozr n 1s 200ms --dry-run
+```
+
+The output, such as `1s 183ms 412us 7ns`, is accepted back by `dozr d`, so a script can decide first and wait later:
+
+```bash
+delay=$(dozr ln 2s 500ms --dry-run)
+echo "Retrying in $delay"
+dozr d "$delay"
+```
+
+### Repeatable Runs
+
+The same seed always picks the same duration, which makes load tests and bug reports reproducible:
+
+```bash
+dozr e 0.5 --seed 42 --dry-run
+```
+
+### Branching on a Skipped Wait
+
+Exit with status 3 when a probabilistic wait is skipped, and branch on it:
+
+```bash
+dozr d 5s -p 0.2 --skip-exit-code 3
+```
+
+```text
+if dozr d 5s -p 0.2 --skip-exit-code 3; then
+    echo "waited"
+else
+    [ $? -eq 3 ] && echo "skipped"
+fi
+```
+
 ## Statistical Distribution Waits
 
 ### Normal Distribution

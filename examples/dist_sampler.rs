@@ -1,11 +1,12 @@
 //! Prints durations sampled exactly as `dozr` would, one per line, in seconds.
 //!
-//! Takes the same command and options as `dozr`, plus a sample count and an
-//! optional seed. Nothing is slept.
+//! Takes the same command and options as `dozr`, including `--seed`, plus a
+//! sample count. Nothing is slept. For a single sample in humantime format,
+//! use `dozr --dry-run` instead.
 //!
 //! ```text
 //! cargo run --release --example dist_sampler -- --count 5000 n 1s 100ms
-//! cargo run --release --example dist_sampler -- --seed 1 ln 1s 500ms -j 50ms
+//! cargo run --release --example dist_sampler -- --seed 1 ln 1s 500ms -j 50ms --max 2s
 //! ```
 
 use clap::{CommandFactory, Parser};
@@ -24,24 +25,20 @@ struct Args {
     #[arg(long, default_value_t = 1000)]
     count: usize,
 
-    /// Seed for reproducible output.
-    #[arg(long)]
-    seed: Option<u64>,
-
     #[command(flatten)]
     dozr: Cli,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let wait = args.dozr.into_wait();
+    let (wait, options) = args.dozr.into_parts();
     if let Err(e) = wait.validate() {
         Args::command()
             .error(clap::error::ErrorKind::ValueValidation, format!("{e:#}"))
             .exit();
     }
 
-    let mut rng = match args.seed {
+    let mut rng = match options.seed {
         Some(seed) => StdRng::seed_from_u64(seed),
         None => StdRng::from_rng(&mut rand::rng()),
     };

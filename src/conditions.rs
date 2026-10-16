@@ -299,6 +299,8 @@ pub struct Sample {
     pub clamped: bool,
     /// Set when the probability gate decided not to wait.
     pub skipped: Option<Skip>,
+    /// Set when `min` or `max` changed the duration.
+    pub adjusted: Option<Adjustment>,
 }
 
 impl Sample {
@@ -308,8 +310,18 @@ impl Sample {
             duration,
             clamped: false,
             skipped: None,
+            adjusted: None,
         }
     }
+}
+
+/// How a [`Wait`]'s bounds changed a sampled duration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Adjustment {
+    /// The sample, including jitter, was below `min` and was raised to it.
+    RaisedToMin { sampled: Duration },
+    /// The sample, including jitter, was above `max` and was lowered to it.
+    LoweredToMax { sampled: Duration },
 }
 
 /// Details of a skipped probabilistic wait.
@@ -327,18 +339,34 @@ pub struct Wait {
     pub jitter: Option<Duration>,
     /// Chance of waiting at all, from 0.0 (never) to 1.0 (always).
     pub probability: Option<f64>,
+    /// Shortest wait, applied after jitter. A skipped wait is still skipped.
+    pub min: Option<Duration>,
+    /// Longest wait, applied after jitter.
+    pub max: Option<Duration>,
     pub verbose: Verbose,
 }
 
 impl Wait {
-    /// A wait with no jitter, no probability gate, and no progress output.
+    /// A wait with no jitter, probability gate, bounds, or progress output.
     pub fn new(sampler: Sampler) -> Self {
         Wait {
             sampler,
             jitter: None,
             probability: None,
+            min: None,
+            max: None,
             verbose: Verbose::Off,
         }
+    }
+
+    pub fn with_min(mut self, min: Duration) -> Self {
+        self.min = Some(min);
+        self
+    }
+
+    pub fn with_max(mut self, max: Duration) -> Self {
+        self.max = Some(max);
+        self
     }
 
     pub fn with_jitter(mut self, max_jitter: Duration) -> Self {
@@ -366,6 +394,14 @@ impl Wait {
             }
             _ => {}
         }
+        match (self.min, self.max) {
+            (Some(min), Some(max)) if min > max => bail!(
+                "--min must not be greater than --max, got {} and {}",
+                fmt(min),
+                fmt(max)
+            ),
+            _ => {}
+        }
         match self.verbose {
             Verbose::Every(period) if period < MIN_VERBOSE_PERIOD => bail!(
                 "--verbose update period must be at least {}",
@@ -383,7 +419,8 @@ impl Wait {
     /// Draws one sample as if the local time were `now`.
     ///
     /// The probability gate is rolled first; a skipped wait draws nothing
-    /// else. Otherwise the sampler is drawn and jitter added.
+    /// else. Otherwise the sampler is drawn, jitter added, and the result
+    /// held within `min` and `max`.
     pub fn sample_at(&self, rng: &mut dyn RngCore, now: &DateTime<Local>) -> Result<Sample> {
         self.validate()?;
         if let Some(probability) = self.probability {
@@ -394,15 +431,23 @@ impl Wait {
                     duration: Duration::ZERO,
                     clamped: false,
                     skipped: Some(Skip { probability, roll }),
+                    adjusted: None,
                 });
             }
         }
         let (base, clamped) = self.sampler.draw(rng, now)?;
         let jitter = sample_jitter(rng, self.jitter.unwrap_or_default());
+        let sampled = base.saturating_add(jitter);
+        let (duration, adjusted) = match (self.min, self.max) {
+            (Some(min), _) if sampled < min => (min, Some(Adjustment::RaisedToMin { sampled })),
+            (_, Some(max)) if sampled > max => (max, Some(Adjustment::LoweredToMax { sampled })),
+            _ => (sampled, None),
+        };
         Ok(Sample {
-            duration: base.saturating_add(jitter),
+            duration,
             clamped,
             skipped: None,
+            adjusted,
         })
     }
 
@@ -411,15 +456,17 @@ impl Wait {
         Ok(self.sample(&mut rand::rng())?.duration)
     }
 
-    /// Draws exactly one sample and passes it to `sleeper`.
-    pub fn wait_using(&self, rng: &mut dyn RngCore, sleeper: &mut dyn Sleeper) -> Result<()> {
+    /// Draws exactly one sample, passes it to `sleeper`, and returns it.
+    pub fn wait_using(&self, rng: &mut dyn RngCore, sleeper: &mut dyn Sleeper) -> Result<Sample> {
         let sample = self.sample(rng)?;
         sleeper.perform(&sample, self.verbose);
-        Ok(())
+        Ok(sample)
     }
 
-    /// Performs the wait, reporting progress on stderr.
-    pub fn wait(&self) -> Result<()> {
+    /// Performs the wait, reporting progress on stderr, and returns the
+    /// sample that was performed. Check [`Sample::skipped`] to learn whether
+    /// a probabilistic wait happened.
+    pub fn wait(&self) -> Result<Sample> {
         self.wait_using(&mut rand::rng(), &mut ConsoleSleeper::stderr())
     }
 }
@@ -446,30 +493,64 @@ impl ConsoleSleeper<std::io::Stderr, SystemClock> {
     }
 }
 
-impl<W: Write, C: Clock> Sleeper for ConsoleSleeper<W, C> {
-    fn perform(&mut self, sample: &Sample, verbose: Verbose) {
-        // Progress output is best effort: a closed stderr must not stop the wait.
-        let out = &mut self.out;
-        let stamp = || Local::now().format("%H:%M:%S");
+fn stamp() -> impl std::fmt::Display {
+    Local::now().format("%H:%M:%S")
+}
 
-        if let Some(skip) = sample.skipped {
-            if verbose.is_on() {
-                let _ = writeln!(
-                    out,
-                    "Probabilistic wait: Skipping sleep (probability: {}, roll: {:.2})",
-                    skip.probability, skip.roll
-                );
-            }
-            return;
-        }
-        if sample.clamped && verbose.is_on() {
+/// Writes the one-off notes about a sample (skipped, clamped, or adjusted)
+/// when `verbose` is on. Returns true if the wait was skipped.
+fn write_notes(out: &mut dyn Write, sample: &Sample, verbose: Verbose) -> bool {
+    // Notes are best effort: a closed stream must not stop the wait.
+    if let Some(skip) = sample.skipped {
+        if verbose.is_on() {
             let _ = writeln!(
                 out,
-                "[{}] [DOZR] Sampled duration was negative and was clamped to zero.",
-                stamp()
+                "Probabilistic wait: Skipping sleep (probability: {}, roll: {:.2})",
+                skip.probability, skip.roll
             );
         }
+        return true;
+    }
+    if !verbose.is_on() {
+        return false;
+    }
+    if sample.clamped {
+        let _ = writeln!(
+            out,
+            "[{}] [DOZR] Sampled duration was negative and was clamped to zero.",
+            stamp()
+        );
+    }
+    match sample.adjusted {
+        Some(Adjustment::RaisedToMin { sampled }) => {
+            let _ = writeln!(
+                out,
+                "[{}] [DOZR] Sampled {:.3}s is below --min; waiting {:.3}s instead.",
+                stamp(),
+                sampled.as_secs_f64(),
+                sample.duration.as_secs_f64()
+            );
+        }
+        Some(Adjustment::LoweredToMax { sampled }) => {
+            let _ = writeln!(
+                out,
+                "[{}] [DOZR] Sampled {:.3}s is above --max; waiting {:.3}s instead.",
+                stamp(),
+                sampled.as_secs_f64(),
+                sample.duration.as_secs_f64()
+            );
+        }
+        None => {}
+    }
+    false
+}
 
+impl<W: Write, C: Clock> Sleeper for ConsoleSleeper<W, C> {
+    fn perform(&mut self, sample: &Sample, verbose: Verbose) {
+        if write_notes(&mut self.out, sample, verbose) {
+            return;
+        }
+        let out = &mut self.out;
         let mut report = |remaining: Duration, decimals: usize| {
             let _ = if remaining.is_zero() {
                 writeln!(out, "[{}] Wait complete.", stamp())
@@ -499,6 +580,33 @@ impl<W: Write, C: Clock> Sleeper for ConsoleSleeper<W, C> {
                 });
             }
         }
+    }
+}
+
+/// A [`Sleeper`] that prints the duration instead of waiting.
+///
+/// The duration goes to `out` in humantime format, such as `1s 250ms`, which
+/// `dozr d` accepts back. A skipped wait prints `0s`. Notes about the sample
+/// go to `notes` when verbose output is on; there is no countdown.
+pub struct DryRunSleeper<W: Write, N: Write> {
+    pub out: W,
+    pub notes: N,
+}
+
+impl DryRunSleeper<std::io::Stdout, std::io::Stderr> {
+    /// Duration on stdout, notes on stderr.
+    pub fn stdio() -> Self {
+        DryRunSleeper {
+            out: std::io::stdout(),
+            notes: std::io::stderr(),
+        }
+    }
+}
+
+impl<W: Write, N: Write> Sleeper for DryRunSleeper<W, N> {
+    fn perform(&mut self, sample: &Sample, verbose: Verbose) {
+        write_notes(&mut self.notes, sample, verbose);
+        let _ = writeln!(self.out, "{}", fmt(sample.duration));
     }
 }
 
@@ -1094,6 +1202,203 @@ mod tests {
         assert_eq!(duration_until(&now, hms(1, 30, 0)), Ok(whole(2700)));
     }
 
+    // P3-4: --min and --max bound every sampler, after jitter.
+    #[test]
+    fn test_bounds_hold_for_every_sampler() {
+        let now = noon();
+        let (lo, hi) = (ms(900), ms(1_100));
+        for sampler in all_samplers() {
+            let wait = Wait::new(sampler)
+                .with_jitter(ms(200))
+                .with_min(lo)
+                .with_max(hi);
+            for seed in 0..200 {
+                let s = wait.sample_at(&mut rng(seed), &now).unwrap();
+                assert!(s.duration >= lo && s.duration <= hi, "{sampler:?}: {s:?}");
+                match s.adjusted {
+                    Some(Adjustment::RaisedToMin { sampled }) => {
+                        assert!(sampled < lo);
+                        assert_eq!(s.duration, lo);
+                    }
+                    Some(Adjustment::LoweredToMax { sampled }) => {
+                        assert!(sampled > hi);
+                        assert_eq!(s.duration, hi);
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bounds_only_change_out_of_range_samples() {
+        let now = noon();
+        for sampler in all_samplers() {
+            let plain = Wait::new(sampler).with_jitter(ms(200));
+            let bounded = plain.with_min(ms(900)).with_max(ms(1_100));
+            for seed in 0..100 {
+                let a = plain.sample_at(&mut rng(seed), &now).unwrap();
+                let b = bounded.sample_at(&mut rng(seed), &now).unwrap();
+                match b.adjusted {
+                    None => assert_eq!(a, b, "{sampler:?}"),
+                    Some(
+                        Adjustment::RaisedToMin { sampled } | Adjustment::LoweredToMax { sampled },
+                    ) => assert_eq!(sampled, a.duration, "{sampler:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bounds_tame_pareto_tail() {
+        let wait = Wait::new(Sampler::Pareto {
+            scale: secs(1.0),
+            shape: 0.5,
+        })
+        .with_max(secs(30.0));
+        let mut r = rng(17);
+        let draws: Vec<Sample> = (0..1_000).map(|_| wait.sample(&mut r).unwrap()).collect();
+        assert!(draws.iter().all(|s| s.duration <= secs(30.0)));
+        assert!(draws.iter().any(|s| s.adjusted.is_some()));
+    }
+
+    #[test]
+    fn test_min_raises_clamped_negative_samples() {
+        let wait = Wait::new(Sampler::Normal {
+            mean: Duration::ZERO,
+            std_dev: secs(1.0),
+        })
+        .with_min(ms(100));
+        let mut r = rng(18);
+        let clamped: Vec<Sample> = (0..200)
+            .map(|_| wait.sample(&mut r).unwrap())
+            .filter(|s| s.clamped)
+            .collect();
+        assert!(!clamped.is_empty());
+        for s in clamped {
+            assert_eq!(s.duration, ms(100));
+            assert_eq!(
+                s.adjusted,
+                Some(Adjustment::RaisedToMin {
+                    sampled: Duration::ZERO
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn test_bounds_do_not_unskip() {
+        let wait = Wait::new(Sampler::Fixed(secs(1.0)))
+            .with_probability(0.0)
+            .with_min(secs(5.0));
+        let s = wait.sample(&mut rng(0)).unwrap();
+        assert_eq!(s.duration, Duration::ZERO);
+        assert!(s.skipped.is_some());
+        assert_eq!(s.adjusted, None);
+    }
+
+    #[test]
+    fn test_bounds_validation() {
+        let base = Wait::new(Sampler::Fixed(secs(1.0)));
+        assert!(
+            base.with_min(secs(1.0))
+                .with_max(secs(1.0))
+                .validate()
+                .is_ok()
+        );
+        assert!(base.with_min(secs(1.0)).validate().is_ok());
+        assert!(base.with_max(secs(1.0)).validate().is_ok());
+        let err = base
+            .with_min(secs(2.0))
+            .with_max(secs(1.0))
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--min") && err.contains("--max"), "{err}");
+    }
+
+    #[test]
+    fn test_console_reports_adjustments_only_when_verbose() {
+        let raised = Sample {
+            adjusted: Some(Adjustment::RaisedToMin { sampled: ms(250) }),
+            ..Sample::of(secs(1.0))
+        };
+        let (out, slept) = console(raised, Verbose::Every(secs(1.0)));
+        assert!(
+            out.contains("Sampled 0.250s is below --min; waiting 1.000s instead."),
+            "{out}"
+        );
+        assert_eq!(slept, secs(1.0));
+        let (out, _) = console(raised, Verbose::Off);
+        assert_eq!(out, "");
+
+        let lowered = Sample {
+            adjusted: Some(Adjustment::LoweredToMax {
+                sampled: secs(127.5),
+            }),
+            ..Sample::of(secs(30.0))
+        };
+        let (out, _) = console(lowered, Verbose::Adaptive);
+        assert!(
+            out.contains("Sampled 127.500s is above --max; waiting 30.000s instead."),
+            "{out}"
+        );
+    }
+
+    // P3-2: dry run prints the duration and does not sleep.
+    fn dry_run(sample: Sample, verbose: Verbose) -> (String, String) {
+        let mut sleeper = DryRunSleeper {
+            out: Vec::new(),
+            notes: Vec::new(),
+        };
+        sleeper.perform(&sample, verbose);
+        (
+            String::from_utf8(sleeper.out).unwrap(),
+            String::from_utf8(sleeper.notes).unwrap(),
+        )
+    }
+
+    #[test]
+    fn test_dry_run_prints_round_trippable_duration() {
+        for d in [
+            Duration::ZERO,
+            ms(1),
+            secs(1.25),
+            secs(90.0),
+            Duration::new(3_725, 123_456_789),
+        ] {
+            let (out, notes) = dry_run(Sample::of(d), Verbose::Off);
+            assert_eq!(notes, "");
+            assert!(out.ends_with('\n') && out.lines().count() == 1, "{out:?}");
+            assert_eq!(humantime::parse_duration(out.trim()).unwrap(), d, "{out}");
+        }
+    }
+
+    #[test]
+    fn test_dry_run_skipped_prints_zero_and_notes_when_verbose() {
+        let skipped = Sample {
+            skipped: Some(Skip {
+                probability: 0.1,
+                roll: 0.9,
+            }),
+            ..Sample::of(Duration::ZERO)
+        };
+        let (out, notes) = dry_run(skipped, Verbose::Adaptive);
+        assert_eq!(out, "0s\n");
+        assert!(notes.contains("Skipping sleep"), "{notes}");
+        let (_, notes) = dry_run(skipped, Verbose::Off);
+        assert_eq!(notes, "");
+    }
+
+    #[test]
+    fn test_wait_using_returns_the_performed_sample() {
+        let wait = Wait::new(Sampler::Fixed(ms(5))).with_probability(0.0);
+        let mut sleeper = RecordingSleeper::default();
+        let s = wait.wait_using(&mut rng(0), &mut sleeper).unwrap();
+        assert!(s.skipped.is_some());
+        assert_eq!(sleeper.performed[0].0, s);
+    }
+
     // ConsoleSleeper output, driven by a fake clock.
 
     #[test]
@@ -1138,9 +1443,8 @@ mod tests {
     #[test]
     fn test_console_reports_clamp_only_when_verbose() {
         let clamped = Sample {
-            duration: Duration::ZERO,
             clamped: true,
-            skipped: None,
+            ..Sample::of(Duration::ZERO)
         };
         let (out, _) = console(clamped, Verbose::Adaptive);
         assert!(out.contains("clamped to zero"), "{out}");
@@ -1151,12 +1455,11 @@ mod tests {
     #[test]
     fn test_console_reports_skip_only_when_verbose() {
         let skipped = Sample {
-            duration: Duration::ZERO,
-            clamped: false,
             skipped: Some(Skip {
                 probability: 0.25,
                 roll: 0.5,
             }),
+            ..Sample::of(Duration::ZERO)
         };
         let (out, slept) = console(skipped, Verbose::Every(secs(1.0)));
         assert_eq!(

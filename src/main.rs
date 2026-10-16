@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     match dozr::run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             // `{:#}` prints the cause chain on one line, without the
             // backtrace that `Debug` would add when RUST_BACKTRACE is set.

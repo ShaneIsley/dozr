@@ -18,7 +18,7 @@ commands are included so each fix can be checked the same way.
 | P0-1 to P0-6 | Done | Deviations from the original wording are noted under each item. |
 | P1-1 to P1-6 | Done | P1-5 and P1-6 share one mechanism: `WaitCondition::sample` returns a `Sample` with clamped and skipped details, and every wait goes through a replaceable `Sleeper`. That is the sleep injection from P2-1, done early because both items need it. |
 | P2-1 to P2-5 | Done | Notes under each item. P2-2 also fixed a panic on extreme parameters, found while planning it. |
-| P3 | Not started | |
+| P3-1 to P3-4 | Done | Notes under each item. |
 
 ## Priorities
 
@@ -468,6 +468,13 @@ statistical testing of the CLI possible without sleeping.
 Tests: output is a single humantime-formatted duration on stdout; elapsed
 time under 50 ms; combined with `--seed` it is stable.
 
+(Done. The elapsed-time check uses a one-hour wait and a 1 s limit rather
+than 50 ms, for the same parallel-load reason as P0-2. The printed duration
+is also checked to round-trip through `dozr d`. With `-v`, notes such as a
+skipped or bounded wait go to stderr; there is no countdown.
+`scripts/check_examples.sh` now uses `--dry-run` instead of `-p 0`, so
+documented probabilities are checked too.)
+
 ### P3-3. Exit status when a probabilistic wait is skipped
 
 Add `--skip-exit-code <n>` (default 0 for compatibility). Scripts can then
@@ -475,6 +482,10 @@ branch on whether the wait happened.
 
 Tests: `-p 0.0 --skip-exit-code 3` exits 3; `-p 1.0 --skip-exit-code 3`
 exits 0.
+
+(Done. It also applies under `--dry-run`, and a seeded test checks the
+status matches whether the wait happened. `Wait::wait` now returns the
+performed `Sample`, so library users can see a skip too.)
 
 ### P3-4. Optional floor and ceiling for sampled waits
 
@@ -484,6 +495,11 @@ Pareto's heavy tail (a scale-1 shape-2 run produced a 127 s sample).
 
 Tests: seeded samples never fall outside the bounds; `--min` greater than
 `--max` is rejected at parse time.
+
+(Done. Bounds apply to the total after jitter, and a skipped wait stays
+skipped. The sample records an `Adjustment` with the original value, which
+`-v` reports. The flags use internal ids distinct from the `uniform` and
+`triangular` `<MIN>`/`<MAX>` arguments, and a test runs both together.)
 
 ## Definition of done per release
 

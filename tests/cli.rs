@@ -608,3 +608,214 @@ fn test_jitter_applies_to_align() {
         "longest run was {longest:?}; jitter appears to be ignored for align"
     );
 }
+
+// ---------------------------------------------------------------------------
+// P3: --dry-run, --seed, --skip-exit-code, --min and --max
+// ---------------------------------------------------------------------------
+
+/// Runs dozr with `args` plus `--dry-run`, returning exit status and stdout.
+fn dry_run(args: &[&str]) -> (Option<i32>, String) {
+    let output = dozr().args(args).arg("--dry-run").output().unwrap();
+    (
+        output.status.code(),
+        String::from_utf8(output.stdout).unwrap(),
+    )
+}
+
+#[test]
+fn test_dry_run_prints_duration_without_waiting() {
+    let (elapsed, output) = timed(&["d", "1h", "--dry-run"]);
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "1h\n");
+    assert!(output.stderr.is_empty());
+    assert!(elapsed < Duration::from_secs(1), "took {elapsed:?}");
+}
+
+#[test]
+fn test_dry_run_works_for_every_subcommand() {
+    for args in long_wait_commands() {
+        let args = with_args(&args, &["--dry-run"]);
+        let (elapsed, output) = timed(&as_strs(&args));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "{args:?} took {elapsed:?}"
+        );
+        assert_eq!(stdout.lines().count(), 1, "{args:?}: {stdout:?}");
+        let d = humantime::parse_duration(stdout.trim())
+            .unwrap_or_else(|e| panic!("{args:?}: {stdout:?}: {e}"));
+
+        // The printed duration is accepted back by `dozr d` unchanged.
+        let (code, again) = dry_run(&["d", stdout.trim()]);
+        assert_eq!(code, Some(0));
+        assert_eq!(humantime::parse_duration(again.trim()).unwrap(), d);
+    }
+}
+
+#[test]
+fn test_dry_run_with_verbose_has_notes_but_no_countdown() {
+    let output = dozr()
+        .args(["d", "5s", "-p", "0", "-v", "--dry-run"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "0s\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Skipping sleep"), "{stderr}");
+
+    let output = dozr()
+        .args(["d", "5s", "-v", "--dry-run"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "5s\n");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
+fn test_same_seed_gives_same_duration() {
+    let random_commands: &[&[&str]] = &[
+        &["n", "1s", "100ms"],
+        &["e", "2"],
+        &["ln", "1s", "500ms"],
+        &["par", "1s", "2"],
+        &["u", "1s", "2s"],
+        &["t", "1s", "3s", "2s"],
+        &["g", "2", "1s"],
+        &["d", "1s", "-j", "1s"],
+        &["d", "1s", "-p", "0.5"],
+    ];
+    for args in random_commands {
+        let seeded = |seed: &str| dry_run(&[*args, &["--seed", seed]].concat()).1;
+        assert_eq!(seeded("42"), seeded("42"), "{args:?}");
+        let distinct: std::collections::HashSet<String> =
+            (0..10).map(|s| seeded(&s.to_string())).collect();
+        assert!(distinct.len() > 1, "{args:?}: every seed gave {distinct:?}");
+    }
+}
+
+fn as_owned(args: &[&str]) -> Vec<String> {
+    args.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn test_skip_exit_code() {
+    for extra in [&[][..], &["--dry-run"]] {
+        let skipped = with_args(
+            &as_owned(&["d", "5s", "-p", "0.0", "--skip-exit-code", "3"]),
+            extra,
+        );
+        let output = dozr().args(&skipped).output().unwrap();
+        assert_eq!(output.status.code(), Some(3), "{skipped:?}");
+
+        let waited = with_args(
+            &as_owned(&["d", "10ms", "-p", "1.0", "--skip-exit-code", "3"]),
+            extra,
+        );
+        let output = dozr().args(&waited).output().unwrap();
+        assert_eq!(output.status.code(), Some(0), "{waited:?}");
+    }
+    // Without the option a skip still exits 0, as before.
+    let output = dozr().args(["d", "5s", "-p", "0"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn test_skip_exit_code_matches_what_happened() {
+    let mut seen = std::collections::HashSet::new();
+    for seed in 0..20 {
+        let seed = seed.to_string();
+        let (code, out) = dry_run(&[
+            "d",
+            "1s",
+            "-p",
+            "0.5",
+            "--skip-exit-code",
+            "4",
+            "--seed",
+            &seed,
+        ]);
+        match out.as_str() {
+            "0s\n" => assert_eq!(code, Some(4), "seed {seed}"),
+            "1s\n" => assert_eq!(code, Some(0), "seed {seed}"),
+            other => panic!("seed {seed}: unexpected output {other:?}"),
+        }
+        seen.insert(code);
+    }
+    assert_eq!(seen.len(), 2, "20 seeds never both waited and skipped");
+}
+
+#[test]
+fn test_min_and_max_bound_every_sample() {
+    for seed in 0..30 {
+        let seed = seed.to_string();
+        let (code, out) = dry_run(&[
+            "par", "1s", "0.5", "--min", "2s", "--max", "30s", "--seed", &seed,
+        ]);
+        assert_eq!(code, Some(0));
+        let d = humantime::parse_duration(out.trim()).unwrap();
+        assert!(
+            d >= Duration::from_secs(2) && d <= Duration::from_secs(30),
+            "seed {seed}: {d:?}"
+        );
+    }
+}
+
+#[test]
+fn test_min_and_max_do_not_clash_with_uniform_bounds() {
+    for seed in 0..10 {
+        let seed = seed.to_string();
+        let (code, out) = dry_run(&[
+            "u", "1s", "5s", "--min", "2s", "--max", "4s", "--seed", &seed,
+        ]);
+        assert_eq!(code, Some(0));
+        let d = humantime::parse_duration(out.trim()).unwrap();
+        assert!(
+            d >= Duration::from_secs(2) && d <= Duration::from_secs(4),
+            "{d:?}"
+        );
+    }
+}
+
+#[test]
+fn test_min_greater_than_max_is_rejected() {
+    let output = dozr()
+        .args(["d", "1s", "--min", "5s", "--max", "1s"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.contains("--min must not be greater than --max"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn test_bound_adjustment_is_reported_when_verbose() {
+    // A Pareto with shape 0.5 exceeds 1.5s about 82% of the time.
+    let mut saw_note = false;
+    for seed in 0..10 {
+        let seed = seed.to_string();
+        let output = dozr()
+            .args([
+                "par",
+                "1s",
+                "0.5",
+                "--max",
+                "1500ms",
+                "-v",
+                "--dry-run",
+                "--seed",
+                &seed,
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("is above --max; waiting 1.500s instead.") {
+            assert_eq!(String::from_utf8_lossy(&output.stdout), "1s 500ms\n");
+            saw_note = true;
+        }
+    }
+    assert!(saw_note, "no seed reported lowering to --max");
+}

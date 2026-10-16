@@ -44,11 +44,11 @@ Examples in the API documentation are compiled and run by `cargo test`.
 
 ## Documented commands
 
-`scripts/check_examples.sh` runs every `dozr` command shown in `README.md` and `examples.md` with `-p 0`, so each is parsed and validated without waiting. CI runs it on every push.
+`scripts/check_examples.sh` runs every `dozr` command shown in `README.md` and `examples.md` with `--dry-run`, so each is parsed and fully validated without waiting. A command passes if it exits 0, or with the status it gives to `--skip-exit-code`. Commands that use shell variables are skipped. CI runs it on every push.
 
 ## Inspecting distributions by hand
 
-The `dist_sampler` example prints sampled durations without waiting, and `scripts/sample_stats.sh` summarises them:
+`dozr --dry-run` prints a single sampled duration, and `--seed` makes it repeatable. For many samples, the `dist_sampler` example prints durations in seconds without waiting, and `scripts/sample_stats.sh` summarises them:
 
 ```bash
 scripts/sample_stats.sh --count 20000 --seed 1 ln 1s 500ms

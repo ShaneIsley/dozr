@@ -28,6 +28,11 @@ Planned as 0.5.0. This release breaks the command line and the library API.
 - Adding jitter to a duration near the maximum no longer overflows.
 
 ### Added
+- `--dry-run` prints the chosen duration, such as `1s 250ms`, to stdout instead of waiting. A skipped wait prints `0s`. The output is accepted back by `dozr d`, so a script can decide first and wait later.
+- `--seed <SEED>` makes the random choice repeatable: the same arguments and seed always pick the same duration.
+- `--skip-exit-code <STATUS>` exits with that status when a `-p` wait is skipped, so scripts can branch on it. The default stays 0.
+- `--min <TIME>` and `--max <TIME>` keep any wait, after jitter, within bounds. With `-v`, `dozr` says when a bound changed the wait. `--min` above `--max` is rejected with exit status 2.
+- Library: `Wait::with_min`, `Wait::with_max`, `DryRunSleeper`, and `Sample::adjusted`. `Wait::wait` and `Wait::wait_using` return the `Sample` they performed, and `run` returns the process exit status.
 - With `-v`, `dozr` reports when a sampled duration was negative and was clamped to zero.
 - Help text gives the unit of every argument and notes that negative `normal` samples wait for zero.
 - A bare number where a length of time is expected, including `-j` and `-v`, gets an error suggesting a unit, such as `a unit is required, for example 0.1s or 0.1ms`.
@@ -40,7 +45,7 @@ Planned as 0.5.0. This release breaks the command line and the library API.
 
 ### Testing
 - Progress loops run on a simulated clock in unit tests, so the full adaptive schedule of a 25-minute wait is checked in milliseconds.
-- `scripts/check_examples.sh` checks that every command in the README and `examples.md` parses and validates, and CI runs it.
+- `scripts/check_examples.sh` runs every command in the README and `examples.md` with `--dry-run`, so each is parsed and fully validated without waiting, and CI runs it.
 - CI checks that `cargo install` installs only the `dozr` binary.
 
 ## [0.4.2] - Not yet released
