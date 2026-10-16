@@ -17,7 +17,7 @@
     *   Triangular
     *   Gamma
 *   **Time-Based Waits**: Pause until a specific time of day (e.g., `22:30:00`).
-*   **Alignment**: Align the wait to the next even interval (e.g., `1m`, `30s`).
+*   **Alignment**: Wait until the next boundary of an interval, measured from local midnight (e.g., `1m`, `30s`, `1h`).
 *   **Jitter**: Add a random duration of jitter to the wait.
 *   **Probabilistic Waits**: Wait only with a certain probability, and optionally exit with a chosen status when the wait is skipped.
 *   **Bounds**: Keep any sampled wait between a floor and a ceiling.
@@ -42,7 +42,7 @@ cargo install dozr
 
 | Feature | `sleep` | `dozr` |
 | :--- | :--- | :--- |
-| **Basic Duration** | `sleep 5` (seconds only) | `dozr d 5s` (supports `s`, `ms`, `m`, `h`, etc.) |
+| **Basic Duration** | `sleep 5`; GNU `sleep` also takes `5s` or `0.5m`, BSD `sleep` seconds only | `dozr d 5s`, `dozr d 1m30s` (`ms`, `s`, `m`, `h`, `d`, and more) |
 | **Distribution-based** | No | Yes (Normal, Exponential, Log-Normal, Pareto, Uniform, Triangular, Gamma) |
 | **Time-based Wait** | No | Yes (`dozr at 22:30`) |
 | **Alignment** | No | Yes (`dozr a 1m`) |
@@ -123,6 +123,8 @@ Every argument that is a length of time needs a unit, such as `500ms`, `2s`, or 
 
 A `normal` sample can come out negative. `dozr` waits for zero instead, plus any jitter, and says so when `-v` is on.
 
+`align` boundaries are local midnight plus whole multiples of the interval, so `dozr a 1h` lands on the hour in every time zone and `dozr a 1d` lands at local midnight. On a night the clocks change, the wait to the next boundary can be up to the size of the change shorter or longer than usual.
+
 If an `at` time falls in a daylight-saving gap, `dozr` waits until the same clock time after the clocks change (02:30 becomes 03:30). If it falls in a repeated hour, the first occurrence that is still in the future is used.
 
 ### Global Options
@@ -142,7 +144,7 @@ If an `at` time falls in a daylight-saving gap, `dozr` waits until the same cloc
 
 ## Precision
 
-Every wait is a minimum: `dozr` never returns early. It makes one sleep call for the whole duration, so long waits do not drift. Each run also pays a fixed overhead, measured on a Linux cloud container:
+Every wait is a minimum: `dozr` never returns early. Without `-v` it makes one sleep call for the whole duration. With `-v` it sleeps between updates and recomputes the remaining time from the clock each time, so long waits do not drift either way. Each run also pays a fixed overhead, measured on a Linux cloud container:
 
 | Cost | Typical time |
 | :--- | :--- |

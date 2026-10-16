@@ -143,11 +143,13 @@ fn test_verbose_adaptive_short_wait() {
 
 #[test]
 fn test_time_align_verbose_output() {
-    dozr()
-        .args(["a", "1s", "-v"])
-        .assert()
-        .success()
-        .stderr(str::contains("Wait complete."));
+    let output = dozr().args(["a", "1s", "-v"]).output().unwrap();
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Exactly one countdown line and one completion line, whatever the
+    // remainder to the boundary was.
+    assert_eq!(stderr.matches("Time remaining:").count(), 1, "{stderr}");
+    assert_eq!(stderr.matches("Wait complete.").count(), 1, "{stderr}");
 }
 
 #[test]
@@ -366,19 +368,28 @@ fn test_probabilistic_wait_skip_verbose_output() {
 
 #[test]
 fn test_jitter_applies_with_probability() {
-    // Each run has a 1-in-5 chance of drawing under 100ms of jitter, so the
-    // chance that all five do is 0.2^5, about 0.03%.
-    let longest = (0..5)
-        .map(|_| {
-            let (elapsed, output) = timed(&["d", "10ms", "-j", "500ms", "-p", "1.0"]);
-            assert!(output.status.success());
-            elapsed
+    // Seeded and dry-run, so this is deterministic and does not sleep.
+    let durations: Vec<Duration> = (0..10)
+        .map(|seed| {
+            let (code, out) = dry_run(&[
+                "d",
+                "10ms",
+                "-j",
+                "500ms",
+                "-p",
+                "1.0",
+                "--seed",
+                &seed.to_string(),
+            ]);
+            assert_eq!(code, Some(0));
+            humantime::parse_duration(out.trim()).unwrap()
         })
-        .max()
-        .unwrap();
+        .collect();
+    assert!(durations.iter().all(|d| *d >= Duration::from_millis(10)));
+    assert!(durations.iter().all(|d| *d <= Duration::from_millis(510)));
     assert!(
-        longest > Duration::from_millis(110),
-        "longest run was {longest:?}; jitter appears to be dropped"
+        durations.iter().any(|d| *d > Duration::from_millis(110)),
+        "{durations:?}: jitter appears to be dropped"
     );
 }
 
@@ -548,7 +559,7 @@ fn test_clamped_sample_is_reported_when_verbose() {
         assert!(output.status.success());
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains(note) {
-            assert!(stderr.contains("Wait complete."), "{stderr}");
+            assert_eq!(stderr.matches("Wait complete.").count(), 1, "{stderr}");
             saw_note = true;
             break;
         }
@@ -595,20 +606,18 @@ fn test_extreme_parameters_do_not_crash() {
 
 #[test]
 fn test_jitter_applies_to_align() {
-    // `a 10ms` alone never waits more than 10ms. With up to 300ms of
-    // jitter, the chance that seven runs all stay under 110ms is (1/3)^7,
-    // about 0.05%.
-    let longest = (0..7)
-        .map(|_| {
-            let (elapsed, output) = timed(&["a", "10ms", "-j", "300ms"]);
-            assert!(output.status.success());
-            elapsed
+    // `a 10ms` alone never waits more than 10ms. Seeded and dry-run.
+    let durations: Vec<Duration> = (0..10)
+        .map(|seed| {
+            let (code, out) = dry_run(&["a", "10ms", "-j", "300ms", "--seed", &seed.to_string()]);
+            assert_eq!(code, Some(0));
+            humantime::parse_duration(out.trim()).unwrap()
         })
-        .max()
-        .unwrap();
+        .collect();
+    assert!(durations.iter().all(|d| *d <= Duration::from_millis(310)));
     assert!(
-        longest > Duration::from_millis(110),
-        "longest run was {longest:?}; jitter appears to be ignored for align"
+        durations.iter().any(|d| *d > Duration::from_millis(110)),
+        "{durations:?}: jitter appears to be ignored for align"
     );
 }
 
@@ -821,4 +830,149 @@ fn test_bound_adjustment_is_reported_when_verbose() {
         }
     }
     assert!(saw_note, "no seed reported lowering to --max");
+}
+
+// ---------------------------------------------------------------------------
+// P4: defects found by the post-release review
+// ---------------------------------------------------------------------------
+
+/// Runs dozr with `args` plus `--dry-run` under the time zone `tz`.
+fn dry_run_in_zone(tz: &str, args: &[&str]) -> Duration {
+    let output = dozr()
+        .env("TZ", tz)
+        .args(args)
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{args:?}: {output:?}");
+    humantime::parse_duration(String::from_utf8_lossy(&output.stdout).trim()).unwrap()
+}
+
+// P4-1: the unit tests use chrono-tz, whose repeated-hour ordering differs
+// from chrono::Local. Only the real binary under a real TZ catches this.
+#[test]
+fn test_at_in_a_repeated_hour_takes_the_first_occurrence() {
+    use chrono::{Datelike, Timelike};
+    // A POSIX rule: standard time is UTC, daylight time is UTC+1 from day
+    // 258 until a fall-back two minutes from now (local daylight time).
+    let local_dst = chrono::Utc::now() + chrono::Duration::hours(1);
+    let fold = local_dst + chrono::Duration::seconds(120);
+    let target = local_dst + chrono::Duration::seconds(60);
+    let tz = format!(
+        "STD0DST,258,{}/{:02}:{:02}:{:02}",
+        fold.ordinal0(),
+        fold.hour(),
+        fold.minute(),
+        fold.second()
+    );
+    let d = dry_run_in_zone(&tz, &["at", &target.format("%H:%M:%S").to_string()]);
+    // The first occurrence is about a minute away; the bug picked the second,
+    // an hour later.
+    assert!(d < Duration::from_secs(300), "waited {d:?} under TZ={tz}");
+}
+
+// P4-4: boundaries are wall-clock boundaries in the local zone.
+#[test]
+fn test_align_lands_on_local_wall_clock_boundaries() {
+    use chrono::Timelike;
+    let before = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Kolkata);
+    let d = dry_run_in_zone("Asia/Kolkata", &["a", "1h"]);
+    // `before` predates the binary's own clock reading, so the landing
+    // point is at most a few seconds before the boundary.
+    let landing = before + chrono::Duration::from_std(d).unwrap() + chrono::Duration::seconds(5);
+    assert!(
+        landing.minute() == 0 && landing.second() <= 10,
+        "landed at {landing}"
+    );
+
+    let d = dry_run_in_zone("Asia/Kolkata", &["a", "1d"]);
+    let landing = before + chrono::Duration::from_std(d).unwrap() + chrono::Duration::seconds(5);
+    assert!(
+        landing.hour() == 0 && landing.minute() == 0 && landing.second() <= 10,
+        "landed at {landing}"
+    );
+}
+
+// P4-8: `at` with the current second waits zero, not a day.
+#[test]
+fn test_at_current_second_is_now() {
+    use chrono::Timelike;
+    for _ in 0..5 {
+        let before = chrono::Local::now();
+        let (code, out) = dry_run(&["at", &before.format("%H:%M:%S").to_string()]);
+        let after = chrono::Local::now();
+        if after.second() != before.second() || after.minute() != before.minute() {
+            continue; // the second ticked during the run; try again
+        }
+        assert_eq!(code, Some(0));
+        assert_eq!(out, "0s\n");
+        return;
+    }
+    panic!("could not run dozr within a single second after five tries");
+}
+
+// P4-6: a runtime error with an unwritable stderr exits 1, not 101.
+#[cfg(target_os = "linux")]
+#[test]
+fn test_runtime_error_with_unwritable_stderr_does_not_panic() {
+    // /dev/full fails every write, which used to panic in eprintln!.
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin("dozr"))
+        .args(["a", "400000000y", "--dry-run"])
+        .stderr(std::fs::File::create("/dev/full").unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+// P4-8: validation catches bounds that collide once converted to seconds.
+#[test]
+fn test_uniform_bounds_equal_as_seconds_exit_2() {
+    let output = dozr()
+        .args(["u", "1000000000s", "1000000000s1ns", "--dry-run"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("<MIN>"), "{stderr}");
+}
+
+// P4-8: an interval beyond 584 years does not wrap.
+#[test]
+fn test_align_huge_interval_does_not_wrap() {
+    let (code, out) = dry_run(&["a", "1000y"]);
+    assert_eq!(code, Some(0));
+    let d = humantime::parse_duration(out.trim()).unwrap();
+    assert!(d > Duration::from_secs(900 * 365 * 86_400), "{out}");
+}
+
+// P4-2 and P4-8: countdowns never show 0s while time remains.
+#[test]
+fn test_countdowns_never_show_zero_before_completion() {
+    for args in [
+        &["d", "1500ms", "-v", "1s"][..],
+        &["d", "300ms", "-v"],
+        &["d", "1200ms", "-v"],
+    ] {
+        let output = dozr().args(args).output().unwrap();
+        assert!(output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("remaining: 0s"), "{args:?}: {stderr}");
+        assert_eq!(
+            stderr.matches("Wait complete.").count(),
+            1,
+            "{args:?}: {stderr}"
+        );
+        assert!(stderr.contains("Time remaining:"), "{args:?}: {stderr}");
+    }
+}
+
+// P4-3: the hint for a bare number is something the parser accepts.
+#[test]
+fn test_unit_hint_can_be_followed() {
+    let output = dozr().args(["d", "0.1", "--dry-run"]).output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("write 100ms"), "{stderr}");
+    let (code, out) = dry_run(&["d", "100ms"]);
+    assert_eq!((code, out.as_str()), (Some(0), "100ms\n"));
 }

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as 0.5.1. These defects were found by a post-release review of
+0.5.0; see `REMEDIATION_PLAN.md`.
+
+### Fixed
+- `at` no longer waits for the second occurrence of a time that happens twice on the night the clocks go back. It picked the later one, so a time a minute away could wait an hour longer.
+- Adaptive `-v` on a wait shorter than half a second no longer prints "Wait complete." twice with no countdown. Countdowns now round up in both modes, so a wait never reports `0s` while time remains.
+- The hint for a bare number now suggests a value the parser accepts. `0.1` is steered to `100ms`, because `0.1s` was never valid; whole numbers still get `2s or 2ms`.
+- A runtime error with a closed or full stderr no longer panics.
+- Uniform bounds that differ as durations but are equal once converted to seconds are rejected up front with exit status 2, instead of failing at runtime with exit status 1.
+- `align` intervals longer than 584 years no longer wrap.
+- `at` with the current second waits zero rather than a day. The comparison is made at whole seconds.
+
+### Changed
+- **Behaviour change:** `align` boundaries are measured from local midnight rather than from the Unix epoch in UTC. `dozr a 1h` now lands on the hour in every time zone (it landed at half past in India) and `dozr a 1d` lands at local midnight (it was UTC midnight everywhere). Library: `Sampler::Align` uses the new `duration_to_next_local_alignment`; `duration_to_next_alignment` keeps its epoch semantics.
+- The command-line validators that duplicated `Wait::validate` are removed. Every rule is checked once, in the library, with the same exit status 2 and messages naming the argument.
+- `scripts/check_examples.sh` also checks backticked commands anywhere in the docs and prompt-style lines in `sh` and `bash` fences, and no longer passes a broken command whose exit status happens to equal its `--skip-exit-code`. CI proves it fails on `scripts/testdata/broken.md`.
+- README: the comparison with `sleep` no longer claims GNU `sleep` takes seconds only, and the Precision section describes `-v` accurately.
+- The changelog links for 0.1.0 to 0.4.1 point at the commits that set those versions, since they were never tagged.
+
+### Testing
+- An end-to-end test runs the binary under a POSIX time-zone rule with a fall-back two minutes ahead. The unit tests with `chrono-tz` could not catch the `at` bug, because that zone type orders a repeated hour differently from `chrono::Local`.
+- The two chance-based jitter tests are seeded and no longer sleep.
+- Tests on alignment in a half-hour zone and across both daylight-saving changes, and exact-line tests for short countdowns.
+
 ## [0.5.0] - 2026-10-16
 
 This release fixes several cases where `dozr` silently did something other than what was asked, and it breaks both the command line and the library API. The fixes planned for a 0.4.2 release ship here instead.
@@ -120,8 +144,8 @@ This release fixes several cases where `dozr` silently did something other than 
 
 [Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/ShaneIsley/dozr/compare/92e11a2...v0.5.0
-[0.4.1]: https://github.com/ShaneIsley/dozr/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/ShaneIsley/dozr/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/ShaneIsley/dozr/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/ShaneIsley/dozr/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/ShaneIsley/dozr/releases/tag/v0.1.0
+[0.4.1]: https://github.com/ShaneIsley/dozr/compare/5004a24...92e11a2
+[0.4.0]: https://github.com/ShaneIsley/dozr/compare/ccaf43f...5004a24
+[0.3.0]: https://github.com/ShaneIsley/dozr/compare/698146f...ccaf43f
+[0.2.0]: https://github.com/ShaneIsley/dozr/compare/ff2dc9e...698146f
+[0.1.0]: https://github.com/ShaneIsley/dozr/commit/ff2dc9e

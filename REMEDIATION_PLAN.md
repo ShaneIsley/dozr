@@ -21,7 +21,7 @@ commands are included so each fix can be checked the same way.
 | P3-1 to P3-4 | Done | Notes under each item. |
 | Release | 0.5.0 | The planned 0.4.2 was not released separately; its fixes ship in 0.5.0. Published to crates.io, tagged `v0.5.0`, release page created. |
 | Post-release review | Done | An independent adversarial review of the shipped code, plus a before-and-after measurement, is recorded under **Post-release review** below. It found one behaviour bug and one misleading error introduced by this work. |
-| P4-1 to P4-9 | Not started | The 0.5.1 patch. |
+| P4-1 to P4-9 | Done | All nine, including P4-8 and P4-9, which the definition of done allowed to slip to 0.5.2. Notes under each item. |
 
 ## Priorities
 
@@ -658,6 +658,13 @@ Tests:
 - Unit: the existing fall-back tests, plus the same cases run through
   `Local` with `TZ=America/New_York` set for the test process.
 
+(Done. The fix sorts the two candidates by instant in a shared
+`resolve_local` helper that `at` and the new local alignment both use. The
+`Local` unit test was not added: `TZ` is process-wide and unit tests run in
+parallel, so setting it would race with other tests. The end-to-end test
+under a crafted `TZ` rule covers the `Local` path instead, and it fails on
+the 0.5.0 code.)
+
 ### P4-2. Adaptive `-v` on a short wait prints "Wait complete." twice
 
 Reproduce: `dozr d 300ms -v` prints the completion line twice and no
@@ -678,6 +685,10 @@ Tests:
   `test_clamped_sample_is_reported_when_verbose` in `tests/cli.rs` to assert
   exactly one "Wait complete." line.
 
+(Done. Both modes now round the displayed time up, so `300ms` shows `1s`
+and `2500ms -v 1s` shows `3s, 2s, 1s`; nothing shows `0s` before
+completion. This also closes the `-v 1s` bullet of P4-8.)
+
 ### P4-3. The unit hint recommends a value the parser rejects
 
 Reproduce: `dozr d 0.1` says "a unit is required, for example 0.1s or
@@ -692,6 +703,10 @@ Tests:
 
 - Unit: the hint for `0.1`, `2`, `1e3`, and `inf`.
 - Integration: following the hint for `0.1` is accepted.
+
+(Done. `0.1` is steered to `100ms`, `0.0005` to `500us`; whole numbers get
+`2s or 2ms`; anything else gets a generic hint. A unit test checks every
+suggested form parses.)
 
 ### P4-4. `align` boundaries are not local wall-clock boundaries
 
@@ -714,6 +729,13 @@ Tests:
 Also in this item: the README's "seconds only" claim about `sleep`, and the
 "one sleep call" sentence, which holds only without `-v`.
 
+(Done as local midnight, as agreed. `Sampler::Align` now uses
+`duration_to_next_local_alignment`, which resolves the boundary's wall time
+through the same gap and fold handling as `at`. Unit tests cover Kolkata,
+both New York changes, and a boundary that the clocks jump over. The README
+sentences are fixed. `duration_to_next_alignment` keeps its epoch semantics
+for library users.)
+
 ### P4-5. `scripts/check_examples.sh` can pass a broken command
 
 Reproduce: a file containing `$ dozr d 5x`, a ```` ```sh ```` fence, an
@@ -730,6 +752,10 @@ Tests:
 - Keep the planted file under `scripts/testdata/` and add a CI step that
   asserts the script fails on it. The real docs must still pass.
 
+(Done. The real docs now yield 43 commands, up from 39, because inline
+mentions with two or more arguments are checked. The planted file fails
+with exactly 7, and CI checks that count.)
+
 ### P4-6. A runtime error with a closed stderr panics
 
 Reproduce: `dozr u 1000000000s 1000000000s1ns --dry-run 2>&1 >/dev/null |
@@ -740,6 +766,11 @@ Fix: write the error with `let _ = writeln!(std::io::stderr(), …)`.
 
 Tests: integration, the command above exits 1.
 
+(Done. The uniform command is now rejected at validation, so the test uses
+`a 400000000y`, whose boundary exceeds what `chrono` can represent and is
+the one remaining runtime error, with stderr redirected to `/dev/full`.
+Linux only.)
+
 ### P4-7. Two chance-based tests
 
 `test_jitter_applies_with_probability` and `test_jitter_applies_to_align`
@@ -747,6 +778,8 @@ in `tests/cli.rs` fail by chance about 0.03% of runs each.
 
 Fix: drive both with `--seed` and `--dry-run`, as the P3 tests already do,
 so they are deterministic and no longer sleep.
+
+(Done.)
 
 ### P4-8. Absurd-input edges
 
@@ -764,6 +797,10 @@ so they are deterministic and no longer sleep.
 
 Tests: one unit test per bullet where behaviour changes.
 
+(Done. The changelog links point at the commits that set each version
+rather than at tags, since tags cannot be pushed from the session that did
+this work.)
+
 ### P4-9. Duplicated validation
 
 Five CLI value parsers in `src/cli.rs` (`parse_finite`, `parse_positive`,
@@ -775,3 +812,6 @@ already exits with status 2 and an error naming the argument when
 
 Tests: the existing `test_invalid_parameters_exit_2_and_name_the_argument`
 must still pass unchanged; it is the contract.
+
+(Done. It passed unchanged. The `--verbose` minimum moved out of the parser
+as well, so `parse_verbose` only types the value.)

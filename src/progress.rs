@@ -42,6 +42,7 @@ pub struct SystemClock {
 }
 
 impl SystemClock {
+    /// A clock whose origin is now.
     pub fn new() -> Self {
         SystemClock {
             origin: Instant::now(),
@@ -108,8 +109,9 @@ pub fn verbose_wait_with<F>(
 /// Sleeps for `total_wait`, calling `display_fn` less often as the remaining
 /// time grows.
 ///
-/// `display_fn` receives the remaining time rounded to whole seconds, only
-/// when that value changes, and `Duration::ZERO` once at the end. Updates
+/// `display_fn` receives the remaining time rounded *up* to whole seconds,
+/// only when that value changes, and `Duration::ZERO` once at the end. It is
+/// never given zero while time remains. Updates
 /// land on round numbers: every minute above 10 minutes, then every 15
 /// seconds, 10 seconds, 5 seconds, and finally every second below 20 seconds.
 pub fn adaptive_verbose_wait<F>(total_wait: Duration, display_fn: F)
@@ -134,7 +136,7 @@ where
             break;
         }
 
-        let rounded_eta = remaining.as_secs_f64().round() as u64;
+        let rounded_eta = remaining.as_secs_f64().ceil() as u64;
         if last_displayed_eta != Some(rounded_eta) {
             display_fn(Duration::from_secs(rounded_eta));
             last_displayed_eta = Some(rounded_eta);
@@ -268,6 +270,17 @@ pub(crate) mod tests {
         assert!(clock.sleeps.is_empty());
         let (shown, _) = run_adaptive(Duration::ZERO);
         assert_eq!(shown, vec![0]);
+    }
+
+    #[test]
+    fn test_adaptive_sub_second_wait_never_shows_zero_early() {
+        // P4-2: a 300 ms wait used to display zero (the completion value)
+        // before it was over.
+        let (shown, clock) = run_adaptive(ms(300));
+        assert_eq!(shown, vec![1, 0]);
+        assert_eq!(clock.now, ms(300));
+        let (shown, _) = run_adaptive(ms(1_500));
+        assert_eq!(shown, vec![2, 1, 0]);
     }
 
     #[test]

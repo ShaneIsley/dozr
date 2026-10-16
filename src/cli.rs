@@ -1,7 +1,7 @@
 //! Command-line parsing for `dozr`.
 
-use crate::conditions::{MIN_ALIGN_INTERVAL, Sampler, Wait};
-use crate::{MIN_VERBOSE_PERIOD, Verbose};
+use crate::Verbose;
+use crate::conditions::{Sampler, Wait};
 use chrono::NaiveTime;
 use clap::{Parser, Subcommand};
 use std::time::Duration;
@@ -12,82 +12,49 @@ fn parse_time_of_day(s: &str) -> Result<NaiveTime, String> {
         .map_err(|_| format!("Invalid time format. Expected HH:MM or HH:MM:SS: {s}"))
 }
 
-fn parse_finite(s: &str) -> Result<f64, String> {
-    let v: f64 = s.parse().map_err(|_| format!("'{s}' is not a number"))?;
-    if v.is_finite() {
-        Ok(v)
-    } else {
-        Err("must be a finite number".to_string())
-    }
-}
-
-fn parse_positive(s: &str) -> Result<f64, String> {
-    let v = parse_finite(s)?;
-    if v > 0.0 {
-        Ok(v)
-    } else {
-        Err(format!("must be greater than 0, got {v}"))
-    }
-}
-
-fn parse_probability(s: &str) -> Result<f64, String> {
-    let v = parse_finite(s)?;
-    if (0.0..=1.0).contains(&v) {
-        Ok(v)
-    } else {
-        Err(format!("must be between 0.0 and 1.0, got {v}"))
-    }
-}
-
 /// Parses a length of time such as `500ms` or `1m30s`.
 ///
-/// A bare number, even `0`, is rejected with a hint to add a unit, rather
-/// than humantime's terse "invalid character" or "time unit needed".
+/// A bare number is rejected with a hint the parser will accept. The parser
+/// takes whole numbers of units only, so `0.1` is steered to `100ms` rather
+/// than to `0.1s`.
 fn parse_time(s: &str) -> Result<Duration, String> {
-    if s.parse::<f64>().is_ok() {
-        return Err(format!("a unit is required, for example {s}s or {s}ms"));
+    if let Ok(n) = s.parse::<f64>() {
+        return Err(unit_hint(n, s));
     }
     humantime::parse_duration(s).map_err(|e| e.to_string())
 }
 
-/// Parses the `--verbose` value: `adaptive`, `off`, or an update period of
-/// at least [`MIN_VERBOSE_PERIOD`].
+/// The error for a bare number where a length of time is expected.
+fn unit_hint(n: f64, s: &str) -> String {
+    const GENERIC: &str = "a whole number of units is required, for example 500ms or 2s";
+    if !n.is_finite() || !(0.0..1e15).contains(&n) {
+        return GENERIC.to_string();
+    }
+    if n.fract() == 0.0 {
+        let n = n as u64;
+        return format!("a unit is required, for example {n}s or {n}ms");
+    }
+    // A decimal: suggest the same amount of seconds in the largest unit that
+    // expresses it exactly.
+    for (unit, per_second) in [("ms", 1e3), ("us", 1e6), ("ns", 1e9)] {
+        let v = n * per_second;
+        if v >= 1.0 && (v - v.round()).abs() < 1e-6 {
+            return format!(
+                "a unit is required; if you meant {s} seconds, write {}{unit}",
+                v.round() as u64
+            );
+        }
+    }
+    GENERIC.to_string()
+}
+
+/// Parses the `--verbose` value: `adaptive`, `off`, or an update period.
+/// The minimum period is enforced by [`Wait::validate`].
 fn parse_verbose(s: &str) -> Result<Verbose, String> {
     match s {
         "adaptive" => Ok(Verbose::Adaptive),
         "off" => Ok(Verbose::Off),
-        _ => {
-            let period = parse_time(s)?;
-            if period < MIN_VERBOSE_PERIOD {
-                Err(format!(
-                    "update period must be at least {}",
-                    humantime::format_duration(MIN_VERBOSE_PERIOD)
-                ))
-            } else {
-                Ok(Verbose::Every(period))
-            }
-        }
-    }
-}
-
-fn parse_align_interval(s: &str) -> Result<Duration, String> {
-    let d = parse_time(s)?;
-    if d < MIN_ALIGN_INTERVAL {
-        Err(format!(
-            "must be at least {}",
-            humantime::format_duration(MIN_ALIGN_INTERVAL)
-        ))
-    } else {
-        Ok(d)
-    }
-}
-
-fn parse_positive_duration(s: &str) -> Result<Duration, String> {
-    let d = parse_time(s)?;
-    if d.is_zero() {
-        Err("must be greater than 0".to_string())
-    } else {
-        Ok(d)
+        _ => parse_time(s).map(Verbose::Every),
     }
 }
 
@@ -118,7 +85,7 @@ pub struct Cli {
     pub verbose: Verbose,
 
     /// Wait only with a certain probability (0.0 to 1.0).
-    #[arg(short, long, global = true, value_parser = parse_probability, allow_negative_numbers = true)]
+    #[arg(short, long, global = true, allow_negative_numbers = true)]
     pub probability: Option<f64>,
 
     /// Never wait less than this (e.g., "500ms"), after jitter.
@@ -150,8 +117,11 @@ pub struct Cli {
 /// of the [`Wait`] itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunOptions {
+    /// Seed for the random number generator; `None` means unpredictable.
     pub seed: Option<u64>,
+    /// Print the chosen duration instead of waiting.
     pub dry_run: bool,
+    /// Exit status when a probabilistic wait is skipped.
     pub skip_exit_code: u8,
 }
 
@@ -184,14 +154,14 @@ pub enum Commands {
     #[command(alias = "e")]
     Exponential {
         /// Rate in events per second, a bare number (e.g., "0.5" gives a 2s mean). Must be greater than 0.
-        #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
+        #[arg(allow_negative_numbers = true)]
         lambda: f64,
     },
     /// Wait using a log-normal distribution
     #[command(alias = "ln")]
     LogNormal {
         /// Mean wait (e.g., "1s"). Must be greater than 0.
-        #[arg(value_parser = parse_positive_duration)]
+        #[arg(value_parser = parse_time)]
         mean: Duration,
         /// Standard deviation of the waits (e.g., "250ms").
         #[arg(value_parser = parse_time)]
@@ -201,10 +171,10 @@ pub enum Commands {
     #[command(alias = "par")]
     Pareto {
         /// Minimum wait (e.g., "1s"). Must be greater than 0.
-        #[arg(value_parser = parse_positive_duration)]
+        #[arg(value_parser = parse_time)]
         scale: Duration,
         /// Shape, a bare number (e.g., "1.5"); smaller means a heavier tail. Must be greater than 0.
-        #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
+        #[arg(allow_negative_numbers = true)]
         shape: f64,
     },
     /// Wait using a uniform distribution
@@ -234,17 +204,17 @@ pub enum Commands {
     #[command(alias = "g")]
     Gamma {
         /// Shape, a bare number (e.g., "2.0"). Must be greater than 0.
-        #[arg(value_parser = parse_positive, allow_negative_numbers = true)]
+        #[arg(allow_negative_numbers = true)]
         shape: f64,
         /// Scale (e.g., "1s"). The mean wait is SHAPE times SCALE. Must be greater than 0.
-        #[arg(value_parser = parse_positive_duration)]
+        #[arg(value_parser = parse_time)]
         scale: Duration,
     },
-    /// Align the wait to the next even interval
+    /// Wait until the next boundary: local midnight plus whole multiples of the interval
     #[command(aliases = &["a", "ali"])]
     Align {
-        /// The interval to align to (e.g., "1m", "30s"). Must be at least 1ms.
-        #[arg(value_parser = parse_align_interval)]
+        /// The interval to align to (e.g., "1m", "30s"), measured from local midnight. Must be at least 1ms.
+        #[arg(value_parser = parse_time)]
         interval: Duration,
     },
     /// Wait until a specific time of day
@@ -318,28 +288,73 @@ mod tests {
     }
 
     #[test]
-    fn test_number_parsers() {
-        assert_eq!(parse_probability("0.0"), Ok(0.0));
-        assert_eq!(parse_probability("1"), Ok(1.0));
-        assert!(parse_probability("1.01").is_err());
-        assert!(parse_probability("-0.1").is_err());
-        assert!(parse_probability("NaN").is_err());
-        assert!(parse_positive("0").is_err());
-        assert!(parse_positive("inf").is_err());
-        assert!(parse_positive_duration("0s").is_err());
+    fn test_parse_time_and_unit_hint() {
         assert_eq!(parse_time("0s"), Ok(Duration::ZERO));
-        assert!(parse_time("0").unwrap_err().contains("a unit is required"));
         assert_eq!(parse_time("1m30s"), Ok(Duration::from_secs(90)));
-        assert!(
-            parse_time("0.1")
-                .unwrap_err()
-                .contains("a unit is required")
+        assert_eq!(parse_time("1ms"), Ok(Duration::from_millis(1)));
+        // Whole numbers get the plain hint.
+        assert_eq!(
+            parse_time("2").unwrap_err(),
+            "a unit is required, for example 2s or 2ms"
         );
-        assert!(parse_time("2").unwrap_err().contains("a unit is required"));
-        assert_eq!(parse_positive_duration("1ms"), Ok(Duration::from_millis(1)));
-        assert_eq!(parse_align_interval("1ms"), Ok(Duration::from_millis(1)));
-        assert!(parse_align_interval("999us").is_err());
-        assert!(parse_align_interval("1ns").is_err());
+        assert_eq!(
+            parse_time("1e3").unwrap_err(),
+            "a unit is required, for example 1000s or 1000ms"
+        );
+        assert!(parse_time("0").unwrap_err().contains("0s or 0ms"));
+        // Decimals are steered to a whole number of a smaller unit, since the
+        // parser rejects "0.1s".
+        assert_eq!(
+            parse_time("0.1").unwrap_err(),
+            "a unit is required; if you meant 0.1 seconds, write 100ms"
+        );
+        assert!(parse_time("0.0005").unwrap_err().ends_with("write 500us"));
+        assert!(parse_time("1.5").unwrap_err().ends_with("write 1500ms"));
+        // Anything else gets the generic hint.
+        let generic = "a whole number of units is required, for example 500ms or 2s";
+        assert_eq!(parse_time("inf").unwrap_err(), generic);
+        assert_eq!(parse_time("NaN").unwrap_err(), generic);
+        assert_eq!(parse_time("-1").unwrap_err(), generic);
+        assert_eq!(parse_time("1e-12").unwrap_err(), generic);
+        // Every suggestion in a hint is accepted by the parser.
+        for hint in ["2s", "2ms", "100ms", "500us", "1500ms", "500ms"] {
+            assert!(parse_time(hint).is_ok(), "{hint}");
+        }
+    }
+
+    #[test]
+    fn test_single_argument_rules_are_enforced_by_validate() {
+        // These used to be rejected by clap value parsers; the library is
+        // now the single source of truth, and `run` turns a validation error
+        // into a clap usage error with exit status 2.
+        let invalid = |args: &[&str]| {
+            parse(args)
+                .unwrap()
+                .into_wait()
+                .validate()
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(invalid(&["d", "0s", "-p", "1.01"]).contains("--probability"));
+        assert!(invalid(&["d", "0s", "-p", "-0.1"]).contains("--probability"));
+        assert!(invalid(&["d", "0s", "-p", "NaN"]).contains("--probability"));
+        assert!(invalid(&["e", "0"]).contains("<LAMBDA>"));
+        assert!(invalid(&["e", "inf"]).contains("<LAMBDA>"));
+        assert!(invalid(&["ln", "0s", "1ms"]).contains("<MEAN>"));
+        assert!(invalid(&["par", "0s", "1"]).contains("<SCALE>"));
+        assert!(invalid(&["g", "1", "0s"]).contains("<SCALE>"));
+        assert!(invalid(&["a", "0s"]).contains("<INTERVAL>"));
+        assert!(invalid(&["a", "999us"]).contains("<INTERVAL>"));
+        assert!(invalid(&["d", "1s", "-v", "1ns"]).contains("--verbose"));
+        assert!(invalid(&["d", "1s", "-v", "0s"]).contains("--verbose"));
+        for ok in [
+            &["d", "0s", "-p", "0.0"][..],
+            &["d", "0s", "-p", "1.0"],
+            &["a", "1ms"],
+            &["d", "1s", "-v", "1ms"],
+        ] {
+            assert!(parse(ok).unwrap().into_wait().validate().is_ok(), "{ok:?}");
+        }
     }
 
     #[test]
@@ -523,9 +538,11 @@ mod tests {
             parse(&["d", "1s", "-v", "1ms"]).unwrap().verbose,
             Verbose::Every(Duration::from_millis(1))
         );
-        assert!(parse(&["d", "1s", "-v", "1ns"]).is_err());
-        assert!(parse(&["d", "1s", "-v", "999us"]).is_err());
-        assert!(parse(&["d", "1s", "-v", "0s"]).is_err());
+        // Too-short periods parse; `Wait::validate` rejects them.
+        assert_eq!(
+            parse(&["d", "1s", "-v", "1ns"]).unwrap().verbose,
+            Verbose::Every(Duration::from_nanos(1))
+        );
     }
 
     #[test]
