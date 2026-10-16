@@ -21,10 +21,6 @@ path = "src/lib.rs"
 name = "dozr"
 path = "src/main.rs"
 
-[[bin]]
-name = "dist_sampler"
-path = "src/bin/dist_sampler.rs"
-
 [dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive"] }
@@ -36,8 +32,8 @@ chrono = "0.4"
 [dev-dependencies]
 assert_cmd = "2.0.17"
 predicates = "3.1.0"
-mockall = "0.12.1"
 criterion = { version = "0.5", features = ["html_reports"] }
+chrono-tz = "0.10"
 
 [[bench]]
 name = "wait_conditions"

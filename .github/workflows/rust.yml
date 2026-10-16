@@ -10,13 +10,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  check:
+    name: Lint, test, and docs
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - name: Format
+      run: cargo fmt --all -- --check
+    - name: Clippy
+      run: cargo clippy --all-targets --locked -- -D warnings
+    - name: Test
+      run: cargo test --locked
+    - name: Docs
+      run: cargo doc --no-deps --locked
+      env:
+        RUSTDOCFLAGS: -D warnings
+    - name: Documented commands parse
+      run: scripts/check_examples.sh
+    - name: Install puts only the dozr binary on PATH
+      run: |
+        cargo install --path . --locked --root "$RUNNER_TEMP/dozr-install"
+        test "$(ls "$RUNNER_TEMP/dozr-install/bin")" = dozr
+
+  msrv:
+    name: Build on minimum supported Rust (1.85)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: 1.85.0
     - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      run: cargo build --locked

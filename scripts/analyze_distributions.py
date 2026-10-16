@@ -31,7 +31,11 @@ if __name__ == "__main__" :
     parser.add_argument("--params", required=True, help="Parameters of the distribution (e.g., 'mean=1.0,std_dev=0.1').")
     args = parser.parse_args()
 
-    print("Paste the output from dist_sampler. Press Ctrl+D (Unix) or Ctrl+Z (Windows) when done.")
+    # Typical use:
+    #   cargo run --release --example dist_sampler -- --count 5000 n 1s 100ms \
+    #     | python3 scripts/analyze_distributions.py --distribution normal --params "1s, 100ms"
+    if sys.stdin.isatty():
+        print("Paste the output from the dist_sampler example. Press Ctrl+D (Unix) or Ctrl+Z (Windows) when done.", file=sys.stderr)
     
     samples = []
     for line in sys.stdin:

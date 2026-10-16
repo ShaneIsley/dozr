@@ -32,7 +32,7 @@ Use this to distribute load or simulate natural delays in scripts.
 
 ### Verbose Output
 
-Use the `--verbose` or `-v` flag to see real-time status updates, including estimated time remaining. Updates are adaptive by default (e.g., every 1 second for long waits, 500ms for short waits).
+Use the `--verbose` or `-v` flag to print time-remaining updates to stderr. Without a value, updates are adaptive: every second in the last 20 seconds, then every 5, 10, and 15 seconds as the wait grows, and every minute above 10 minutes.
 
 Wait for 30 seconds with verbose output:
 
@@ -82,6 +82,12 @@ Combine with verbose output and a custom update period:
 dozr a 15s -v 1s
 ```
 
+Add jitter to spread several machines over the first 30 seconds after each minute, rather than having them all start at once:
+
+```bash
+dozr a 1m -j 30s
+```
+
 ### Wait Until a Specific Time
 
 Wait until a specific time of day:
@@ -100,7 +106,7 @@ dozr at 14:30:00 -v
 
 Execute a wait with a given probability. Use this to simulate intermittent delays or for chaos engineering.
 
-Wait for 5 seconds with a 50% chance:
+Wait for 5 seconds with a 50% chance. The `-p` option works with every command, and any `-j` jitter still applies when the wait happens:
 
 ```bash
 dozr d 5s -p 0.5
@@ -143,14 +149,64 @@ dozr d 1m -j 5s -v 2> dozr_progress.log
 cat dozr_progress.log
 ```
 
+## Scripting
+
+### Bounding a Wait
+
+Keep a heavy-tailed wait between 2 and 30 seconds. With `-v`, `dozr` says when a bound changed the wait:
+
+```bash
+dozr par 1s 1.5 --min 2s --max 30s -v
+```
+
+### Previewing a Wait
+
+Print the duration `dozr` would pick, without waiting:
+
+```bash
+dozr n 1s 200ms --dry-run
+```
+
+The output, such as `1s 183ms 412us 7ns`, is accepted back by `dozr d`, so a script can decide first and wait later:
+
+```bash
+delay=$(dozr ln 2s 500ms --dry-run)
+echo "Retrying in $delay"
+dozr d "$delay"
+```
+
+### Repeatable Runs
+
+The same seed always picks the same duration, which makes load tests and bug reports reproducible:
+
+```bash
+dozr e 0.5 --seed 42 --dry-run
+```
+
+### Branching on a Skipped Wait
+
+Exit with status 3 when a probabilistic wait is skipped, and branch on it:
+
+```bash
+dozr d 5s -p 0.2 --skip-exit-code 3
+```
+
+```text
+if dozr d 5s -p 0.2 --skip-exit-code 3; then
+    echo "waited"
+else
+    [ $? -eq 3 ] && echo "skipped"
+fi
+```
+
 ## Statistical Distribution Waits
 
 ### Normal Distribution
 
-Sample from a Normal distribution with a mean of 1 second and a standard deviation of 0.1:
+Sample from a Normal distribution with a mean of 1 second and a standard deviation of 100 milliseconds. Negative samples wait for zero:
 
 ```bash
-dozr n 1s 0.1
+dozr n 1s 100ms
 ```
 
 ### Exponential Distribution
@@ -163,18 +219,18 @@ dozr e 0.5
 
 ### Log-Normal Distribution
 
-Sample from a Log-Normal distribution with a mean of 1 second and a standard deviation of 0.5:
+Sample from a Log-Normal distribution whose waits average 1 second with a standard deviation of 500 milliseconds:
 
 ```bash
-dozr ln 1s 0.5
+dozr ln 1s 500ms
 ```
 
 ### Pareto Distribution
 
-Sample from a Pareto distribution with a scale of 1.0 and a shape of 2.0:
+Sample from a Pareto distribution with a minimum wait of 1 second and a shape of 2.0. Smaller shapes give a heavier tail of long waits:
 
 ```bash
-dozr par 1.0 2.0
+dozr par 1s 2.0
 ```
 
 ### Uniform Distribution
@@ -187,23 +243,49 @@ dozr u 1s 5s
 
 ### Triangular Distribution
 
-Sample from a Triangular distribution with a minimum of 0.0, a maximum of 10.0, and a mode of 5.0:
+Sample from a Triangular distribution between 0 and 10 seconds, most likely 5 seconds:
 
 ```bash
-dozr t 0.0 10.0 5.0
+dozr t 0s 10s 5s
 ```
 
 ### Gamma Distribution
 
-Sample from a Gamma distribution with a shape of 2.0 and a scale of 1.5:
+Sample from a Gamma distribution with a shape of 2.0 and a scale of 1.5 seconds, for a mean of 3 seconds:
 
 ```bash
-dozr g 2.0 1.5
+dozr g 2.0 1500ms
+```
+
+## Inspecting a Distribution
+
+The `dist_sampler` example prints durations sampled exactly as `dozr` would, without waiting. It takes the same command and options as `dozr`, plus `--count` and `--seed` before the command:
+
+```bash
+cargo run --release --example dist_sampler -- --count 5 --seed 1 ln 1s 500ms
+```
+
+`scripts/sample_stats.sh` summarises a larger sample:
+
+```bash
+scripts/sample_stats.sh --count 20000 n 100ms 50ms
 ```
 
 ## Library Usage
 
-For programmatic usage, see the `examples/` directory:
+Build a `Wait` from a `Sampler`, then call `wait`:
+
+```rust
+use dozr::conditions::{Sampler, Wait};
+use std::time::Duration;
+
+Wait::new(Sampler::Exponential { lambda: 2.0 })
+    .with_jitter(Duration::from_millis(100))
+    .with_probability(0.5)
+    .wait()?;
+```
+
+More examples are in the `examples/` directory:
 
 ```bash
 # Basic duration waits

@@ -1,223 +1,50 @@
-use anyhow::Result;
-use clap::Parser;
+//! `dozr`: a flexible `sleep` with distributions, jitter, alignment, and
+//! probabilistic waits.
+//!
+//! The command-line interface lives in [`cli`]. Library users build a
+//! [`conditions::Wait`] from a [`conditions::Sampler`] and call
+//! [`conditions::Wait::wait`].
 
+use anyhow::Result;
+use clap::{CommandFactory, Parser};
+use conditions::{ConsoleSleeper, DryRunSleeper, Sleeper};
+use rand::{RngCore, SeedableRng};
+use std::process::ExitCode;
 
 pub mod cli;
 pub mod conditions;
+pub mod progress;
+
+pub use progress::{MIN_VERBOSE_PERIOD, Verbose, adaptive_verbose_wait, verbose_wait};
 
 /// The main entry point for the dozr application.
 ///
-/// This function parses command-line arguments, determines the appropriate
-/// wait condition, and then executes the wait.
-pub fn run() -> Result<()> {
-    let args = cli::Cli::parse();
-    run_with_args(args)
-}
-
-/// The main logic of the application, accepting a Cli object.
-fn run_with_args(args: cli::Cli) -> Result<()> {
-    let condition = args
-        .command
-        .into_wait_condition(args.jitter, args.verbose, args.probability);
-    condition.wait()
-}
-
-/// Performs the wait with verbose progress updates.
-pub fn verbose_wait<F>(total_wait: std::time::Duration, update_period: std::time::Duration, mut display_fn: F)
-where
-    F: FnMut(std::time::Duration),
-{
-    let start = std::time::Instant::now();
-    let mut last_displayed_eta: Option<u64> = None;
-
-    loop {
-        let elapsed = start.elapsed();
-        let remaining = total_wait.saturating_sub(elapsed);
-        let eta = remaining.as_secs_f64();
-        let rounded_eta = eta.round() as u64;
-
-        if remaining == std::time::Duration::ZERO {
-            display_fn(std::time::Duration::ZERO);
-            break;
-        }
-
-        // Only display if ETA has changed or it's the very first display
-        if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
-            display_fn(std::time::Duration::from_secs(rounded_eta));
-            last_displayed_eta = Some(rounded_eta);
-        }
-
-        let next_update_time = elapsed + update_period;
-        let sleep_duration = next_update_time.saturating_sub(elapsed);
-
-        if sleep_duration > std::time::Duration::ZERO {
-            std::thread::sleep(sleep_duration);
-        } else if remaining > std::time::Duration::ZERO {
-            // If sleep_duration is zero or negative, but there's still time remaining,
-            // yield to ensure other threads can run and prevent busy-waiting.
-            std::thread::yield_now();
-        } else {
-            // If no time remaining, break the loop
-            break;
-        }
+/// Parses command-line arguments, validates them, and performs the wait.
+/// Invalid arguments print a usage error and exit with status 2. Returns the
+/// `--skip-exit-code` status when a probabilistic wait was skipped, and
+/// success otherwise.
+pub fn run() -> Result<ExitCode> {
+    let (wait, options) = cli::Cli::parse().into_parts();
+    if let Err(e) = wait.validate() {
+        cli::Cli::command()
+            .error(clap::error::ErrorKind::ValueValidation, format!("{e:#}"))
+            .exit();
     }
-}
 
-/// Performs the wait with adaptive verbose progress updates.
-pub fn adaptive_verbose_wait<F>(total_wait: std::time::Duration, mut display_fn: F)
-where
-    F: FnMut(std::time::Duration),
-{
-    let start = std::time::Instant::now();
-    let mut last_displayed_eta: Option<u64> = None;
-
-    loop {
-        let elapsed = start.elapsed();
-        let remaining = total_wait.saturating_sub(elapsed);
-        let eta = remaining.as_secs_f64();
-        let rounded_eta = eta.round() as u64;
-
-        if remaining == std::time::Duration::ZERO {
-            display_fn(std::time::Duration::ZERO);
-            break;
-        }
-
-        // Only display if ETA has changed or it's the very first display
-        if last_displayed_eta.map_or(true, |last_eta| last_eta != rounded_eta) {
-            display_fn(std::time::Duration::from_secs(rounded_eta));
-            last_displayed_eta = Some(rounded_eta);
-        }
-
-        let current_update_period = get_adaptive_update_period(remaining);
-
-        let remaining_secs = remaining.as_secs();
-
-        let time_to_next_marker = if current_update_period.as_secs() == 0 {
-            remaining
-        } else {
-            let target_marker_secs = (remaining_secs / current_update_period.as_secs()) * current_update_period.as_secs();
-            remaining.saturating_sub(std::time::Duration::from_secs(target_marker_secs))
-        };
-
-        let time_to_next_threshold = if remaining_secs > 600 {
-            remaining.saturating_sub(std::time::Duration::from_secs(600))
-        } else if remaining_secs > 300 {
-            remaining.saturating_sub(std::time::Duration::from_secs(300))
-        } else if remaining_secs > 60 {
-            remaining.saturating_sub(std::time::Duration::from_secs(60))
-        } else if remaining_secs > 20 {
-            remaining.saturating_sub(std::time::Duration::from_secs(20))
-        } else {
-            remaining
-        };
-
-        let sleep_duration = std::cmp::min(current_update_period, std::cmp::min(time_to_next_threshold, time_to_next_marker));
-        let sleep_duration = sleep_duration.max(std::time::Duration::from_millis(1)); // Ensure at least 1ms sleep to avoid busy-waiting
-
-        if sleep_duration > std::time::Duration::ZERO {
-            std::thread::sleep(sleep_duration);
-        } else if remaining > std::time::Duration::ZERO {
-            // If sleep_duration is zero or negative, but there's still time remaining,
-            // yield to ensure other threads can run and prevent busy-waiting.
-            std::thread::yield_now();
-        } else {
-            // If no time remaining, break the loop
-            break;
-        }
-    }
-}
-
-fn get_adaptive_update_period(remaining: std::time::Duration) -> std::time::Duration {
-    let remaining_secs = remaining.as_secs();
-
-    if remaining_secs <= 20 {
-        std::time::Duration::from_secs(1) // 0-20s: 1s
-    } else if remaining_secs <= 60 {
-        std::time::Duration::from_secs(5) // 21-60s: 5s
-    } else if remaining_secs <= 300 {
-        // 5 minutes
-        std::time::Duration::from_secs(10) // 1-5m: 10s
-    } else if remaining_secs <= 600 {
-        // 10 minutes
-        std::time::Duration::from_secs(15) // 6-10m: 15s
+    let mut rng: Box<dyn RngCore> = match options.seed {
+        Some(seed) => Box::new(rand::rngs::StdRng::seed_from_u64(seed)),
+        None => Box::new(rand::rng()),
+    };
+    let mut sleeper: Box<dyn Sleeper> = if options.dry_run {
+        Box::new(DryRunSleeper::stdio())
     } else {
-        std::time::Duration::from_secs(60) // 10m+: 1m
-    }
-}
+        Box::new(ConsoleSleeper::stderr())
+    };
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-    use crate::cli::{Cli, Commands};
-
-    #[test]
-    fn test_verbose_wait() {
-        let total_wait = Duration::from_millis(100);
-        let update_period = Duration::from_millis(10);
-        let mut call_count = 0;
-        verbose_wait(total_wait, update_period, |_| {
-            call_count += 1;
-        });
-        assert!(call_count > 0);
-    }
-
-    #[test]
-    fn test_adaptive_verbose_wait() {
-        let total_wait = Duration::from_secs(5);
-        let mut call_count = 0;
-        adaptive_verbose_wait(total_wait, |_| {
-            call_count += 1;
-        });
-        assert!(call_count > 0);
-    }
-
-    #[test]
-    fn test_get_adaptive_update_period() {
-        // 0-20s: 1s
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(0)), Duration::from_secs(1));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(10)), Duration::from_secs(1));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(20)), Duration::from_secs(1));
-
-        // 21-60s: 5s
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(21)), Duration::from_secs(5));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(40)), Duration::from_secs(5));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(60)), Duration::from_secs(5));
-
-        // 1-5m (61-300s): 10s
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(61)), Duration::from_secs(10));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(150)), Duration::from_secs(10));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(300)), Duration::from_secs(10));
-
-        // 6-10m (301-600s): 15s
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(301)), Duration::from_secs(15));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(450)), Duration::from_secs(15));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(600)), Duration::from_secs(15));
-
-        // 10m+ (601s+): 1m
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(601)), Duration::from_secs(60));
-        assert_eq!(get_adaptive_update_period(Duration::from_secs(1000)), Duration::from_secs(60));
-    }
-
-    #[test]
-    fn test_run_with_args_duration() {
-        let cli = Cli {
-            command: Commands::Duration { time: Duration::from_secs(1) },
-            jitter: None,
-            verbose: None,
-            probability: None,
-        };
-        assert!(run_with_args(cli).is_ok());
-    }
-
-    #[test]
-    fn test_run_with_args_normal() {
-        let cli = Cli {
-            command: Commands::Normal { mean: Duration::from_secs(1), std_dev: 0.1 },
-            jitter: None,
-            verbose: None,
-            probability: None,
-        };
-        assert!(run_with_args(cli).is_ok());
-    }
+    let sample = wait.wait_using(&mut *rng, &mut *sleeper)?;
+    Ok(if sample.skipped.is_some() {
+        ExitCode::from(options.skip_exit_code)
+    } else {
+        ExitCode::SUCCESS
+    })
 }

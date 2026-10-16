@@ -19,8 +19,10 @@
 *   **Time-Based Waits**: Pause until a specific time of day (e.g., `22:30:00`).
 *   **Alignment**: Align the wait to the next even interval (e.g., `1m`, `30s`).
 *   **Jitter**: Add a random duration of jitter to the wait.
-*   **Probabilistic Waits**: Wait only with a certain probability.
-*   **Verbose Output**: Display a progress bar with the time remaining.
+*   **Probabilistic Waits**: Wait only with a certain probability, and optionally exit with a chosen status when the wait is skipped.
+*   **Bounds**: Keep any sampled wait between a floor and a ceiling.
+*   **Scripting**: Print the chosen duration instead of waiting, and seed the randomness for repeatable runs.
+*   **Verbose Output**: Print timestamped time-remaining updates to stderr.
 
 ## Installation
 
@@ -47,6 +49,8 @@ cargo install dozr
 | **Jitter** | No | Yes (`dozr d 10s -j 1s`) |
 | **Probabilistic Wait** | No | Yes (`dozr d 30s -p 0.5`) |
 | **Verbose Output** | No | Yes (`dozr d 10s -v`) |
+| **Bounds** | No | Yes (`dozr par 1s 1.5 --max 30s`) |
+| **Dry Run** | No | Yes (`dozr n 1s 200ms --dry-run`) |
 
 ### Basic Usage
 
@@ -63,7 +67,7 @@ Sample a wait from a Normal distribution with a mean of 10 seconds and a standar
 
 ```bash
 # Wait for a duration sampled from a Normal distribution
-dozr n 10s 2
+dozr n 10s 2s
 ```
 
 ### Time-Based Waits
@@ -91,10 +95,10 @@ Wait 30 seconds with a 50% chance of waiting:
 dozr d 30s -p 0.5
 ```
 
-Display a progress bar while waiting:
+Print time-remaining updates to stderr while waiting:
 
 ```bash
-# Wait for 10 seconds with a progress bar
+# Wait for 10 seconds, reporting progress
 dozr d 10s -v
 ```
 
@@ -105,25 +109,50 @@ dozr d 10s -v
 | Full Command | Alias(es) | Arguments | Example |
 | :--- | :--- | :--- | :--- |
 | `duration` | `d` | `<TIME>` | `dozr d 5s` |
-| `normal` | `n` | `<MEAN> <STD_DEV>` | `dozr n 10s 2.5` |
+| `normal` | `n` | `<MEAN> <STD_DEV>` | `dozr n 10s 2500ms` |
 | `exponential`| `e` | `<LAMBDA>` | `dozr e 0.5` |
-| `log-normal` | `ln` | `<MEAN> <STD_DEV>` | `dozr ln 1s 0.5` |
-| `pareto` | `par` | `<SCALE> <SHAPE>` | `dozr par 1.0 2.0` |
+| `log-normal` | `ln` | `<MEAN> <STD_DEV>` | `dozr ln 1s 500ms` |
+| `pareto` | `par` | `<SCALE> <SHAPE>` | `dozr par 1s 2.0` |
 | `uniform` | `u` | `<MIN> <MAX>` | `dozr u 1s 10s` |
-| `triangular` | `t` | `<MIN> <MAX> <MODE>`| `dozr t 0.0 10.0 5.0` |
-| `gamma` | `g` | `<SHAPE> <SCALE>` | `dozr g 2.0 1.5` |
+| `triangular` | `t` | `<MIN> <MAX> <MODE>`| `dozr t 0s 10s 5s` |
+| `gamma` | `g` | `<SHAPE> <SCALE>` | `dozr g 2.0 1500ms` |
 | `align` | `a`, `ali` | `<INTERVAL>` | `dozr a 1m` |
 | `at` | *(none)* | `<HH:MM[:SS]>` | `dozr at 22:30` |
+
+Every argument that is a length of time needs a unit, such as `500ms`, `2s`, or `1m30s`. Only three arguments are bare numbers: the exponential rate `<LAMBDA>` in events per second, and the Pareto and gamma `<SHAPE>`. For `log-normal`, `<MEAN>` and `<STD_DEV>` describe the waits themselves, not the underlying normal distribution. Invalid parameters, such as a missing unit or a uniform `<MIN>` above `<MAX>`, are rejected with exit status 2.
+
+A `normal` sample can come out negative. `dozr` waits for zero instead, plus any jitter, and says so when `-v` is on.
+
+If an `at` time falls in a daylight-saving gap, `dozr` waits until the same clock time after the clocks change (02:30 becomes 03:30). If it falls in a repeated hour, the first occurrence that is still in the future is used.
 
 ### Global Options
 
 | Full Option | Short | Value | Description |
 | :--- | :--- | :--- | :--- |
-| `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>`. Not applicable to `align` or `at`. |
-| `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. |
-| `--verbose` | `-v` | `[TIME]` | Shows progress. Can take an optional update interval (e.g., `-v 1s`). |
+| `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>` to any command. With `align` or `at`, the wait ends up to `<TIME>` after the boundary or clock time. |
+| `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. Applies to every command and keeps any jitter. |
+| `--verbose` | `-v` | `[TIME]` | Prints progress to stderr. Without a value, updates are adaptive. With a period of at least `1ms`, such as `-v 250ms`, an update is printed every period. Put a bare `-v` after the command. Before the command, it reads the command name as its period. |
+| `--min` | | `<TIME>` | Never waits less than `<TIME>`, after jitter. A skipped probabilistic wait is still skipped. |
+| `--max` | | `<TIME>` | Never waits more than `<TIME>`, after jitter. Useful for taming the Pareto tail. |
+| `--seed` | | `<SEED>` | Seeds the random number generator, so the same arguments always pick the same duration. |
+| `--dry-run` | | *(none)* | Prints the chosen duration, such as `1s 250ms`, to stdout instead of waiting. A skipped wait prints `0s`. The `duration` command accepts the output back. |
+| `--skip-exit-code` | | `<STATUS>` | Exits with `<STATUS>` when a `-p` wait is skipped. The default is 0. Statuses 1 and 2 also mean errors, so 3 or above is clearest. |
 | `--help` | `-h` | *(none)* | Displays the help message for the command. |
 | `--version` | `-V` | *(none)* | Displays the application version. |
+
+## Precision
+
+Every wait is a minimum: `dozr` never returns early. It makes one sleep call for the whole duration, so long waits do not drift. Each run also pays a fixed overhead, measured on a Linux cloud container:
+
+| Cost | Typical time |
+| :--- | :--- |
+| Starting any process, including coreutils `sleep` | About 1.5 ms |
+| `dozr`'s own start-up, mostly argument parsing | About 0.4 ms |
+| The operating system waking the process late | About 0.1 ms |
+
+`dozr d 1ms` therefore takes about 3 ms from the shell, and `dozr d 100ms` about 102 ms. Durations shorter than a millisecond are accepted, as they are by `sleep`, but they behave like `0s`. For many very short waits in a loop, sleep inside your own program instead of starting a process each time.
+
+`align` intervals must be at least `1ms`, because a shorter boundary could not be observed from outside `dozr`.
 
 ## License
 
