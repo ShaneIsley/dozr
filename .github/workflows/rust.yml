@@ -28,6 +28,12 @@ jobs:
       run: cargo doc --no-deps --locked
       env:
         RUSTDOCFLAGS: -D warnings
+    - name: Documented commands parse
+      run: scripts/check_examples.sh
+    - name: Install puts only the dozr binary on PATH
+      run: |
+        cargo install --path . --locked --root "$RUNNER_TEMP/dozr-install"
+        test "$(ls "$RUNNER_TEMP/dozr-install/bin")" = dozr
 
   msrv:
     name: Build on minimum supported Rust (1.85)

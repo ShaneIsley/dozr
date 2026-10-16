@@ -1,69 +1,15 @@
-use crate::conditions::{self, WaitCondition};
+//! Command-line parsing for `dozr`.
+
+use crate::conditions::{Sampler, Wait};
 use crate::{MIN_VERBOSE_PERIOD, Verbose};
-use chrono::{DateTime, Duration as ChronoDuration, LocalResult, NaiveTime, Offset, TimeZone};
+use chrono::NaiveTime;
 use clap::{Parser, Subcommand};
 use std::time::Duration;
 
-/// Time from `now` until the next occurrence of the wall-clock time `target`
-/// in `now`'s time zone.
-///
-/// - A target equal to `now` returns zero; an earlier target rolls to tomorrow.
-/// - A target inside a daylight-saving gap (a local time that does not exist)
-///   is moved forward by the length of the gap, so 02:30 on a spring-forward
-///   night becomes 03:30.
-/// - A target that occurs twice (fall back) uses the earliest occurrence that
-///   is not in the past.
-pub fn duration_until<Tz: TimeZone>(
-    now: &DateTime<Tz>,
-    target: NaiveTime,
-) -> Result<Duration, String> {
-    let tz = now.timezone();
-    let mut date = now.date_naive();
-
-    // Two days is always enough: today, or failing that tomorrow. The third
-    // iteration only guards against a zone that skips an entire day.
-    for _ in 0..3 {
-        let naive = date.and_time(target);
-        let candidate = match tz.from_local_datetime(&naive) {
-            LocalResult::Single(dt) => (dt >= *now).then_some(dt),
-            LocalResult::Ambiguous(earliest, latest) => {
-                if earliest >= *now {
-                    Some(earliest)
-                } else if latest >= *now {
-                    Some(latest)
-                } else {
-                    None
-                }
-            }
-            LocalResult::None => {
-                // Interpret the wall time using the offset in force before the
-                // gap, which lands just after it.
-                let before = tz.offset_from_utc_datetime(&(naive - ChronoDuration::days(1)));
-                let utc =
-                    naive - ChronoDuration::seconds(i64::from(before.fix().local_minus_utc()));
-                let dt = tz.from_utc_datetime(&utc);
-                (dt >= *now).then_some(dt)
-            }
-        };
-
-        if let Some(target_dt) = candidate {
-            return target_dt
-                .signed_duration_since(now.clone())
-                .to_std()
-                .map_err(|e| e.to_string());
-        }
-        date = date
-            .succ_opt()
-            .ok_or_else(|| "date out of range".to_string())?;
-    }
-    Err(format!("could not resolve {target} to a future time"))
-}
-
-fn parse_time_until(s: &str) -> Result<Duration, String> {
-    let parsed_time = NaiveTime::parse_from_str(s, "%H:%M")
+fn parse_time_of_day(s: &str) -> Result<NaiveTime, String> {
+    NaiveTime::parse_from_str(s, "%H:%M")
         .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S"))
-        .map_err(|_| format!("Invalid time format. Expected HH:MM or HH:MM:SS: {s}"))?;
-    duration_until(&chrono::Local::now(), parsed_time)
+        .map_err(|_| format!("Invalid time format. Expected HH:MM or HH:MM:SS: {s}"))
 }
 
 fn parse_finite(s: &str) -> Result<f64, String> {
@@ -259,113 +205,38 @@ pub enum Commands {
     /// Wait until a specific time of day
     #[command()]
     At {
-        /// The time to wait until (HH:MM or HH:MM:SS).
-        #[arg(value_parser = parse_time_until)]
-        time: Duration,
+        /// The time to wait until (HH:MM or HH:MM:SS), in local time.
+        #[arg(value_parser = parse_time_of_day)]
+        time: NaiveTime,
     },
 }
 
 impl Commands {
-    /// Checks constraints that span more than one argument.
-    ///
-    /// Single-argument constraints are enforced by clap value parsers.
-    pub fn validate(&self) -> Result<(), String> {
+    /// The sampler this command describes.
+    pub fn into_sampler(self) -> Sampler {
         match self {
-            Commands::Uniform { min, max } if min >= max => Err(format!(
-                "uniform <MIN> must be less than <MAX>, got {} and {}",
-                humantime::format_duration(*min),
-                humantime::format_duration(*max)
-            )),
-            Commands::Triangular { min, max, .. } if min >= max => Err(format!(
-                "triangular <MIN> must be less than <MAX>, got {} and {}",
-                humantime::format_duration(*min),
-                humantime::format_duration(*max)
-            )),
-            Commands::Triangular { min, max, mode } if mode < min || mode > max => Err(format!(
-                "triangular <MODE> must be between <MIN> and <MAX>, got {} outside {}..{}",
-                humantime::format_duration(*mode),
-                humantime::format_duration(*min),
-                humantime::format_duration(*max)
-            )),
-            _ => Ok(()),
+            Commands::Duration { time } => Sampler::Fixed(time),
+            Commands::Normal { mean, std_dev } => Sampler::Normal { mean, std_dev },
+            Commands::Exponential { lambda } => Sampler::Exponential { lambda },
+            Commands::LogNormal { mean, std_dev } => Sampler::LogNormal { mean, std_dev },
+            Commands::Pareto { scale, shape } => Sampler::Pareto { scale, shape },
+            Commands::Uniform { min, max } => Sampler::Uniform { min, max },
+            Commands::Triangular { min, max, mode } => Sampler::Triangular { min, max, mode },
+            Commands::Gamma { shape, scale } => Sampler::Gamma { shape, scale },
+            Commands::Align { interval } => Sampler::Align(interval),
+            Commands::At { time } => Sampler::At(time),
         }
     }
+}
 
-    /// Builds the wait condition for this command.
-    ///
-    /// Jitter applies to every command except `align` and `at`, whose purpose
-    /// is to end at an exact time. Probability applies to every command.
-    pub fn into_wait_condition(
-        self,
-        jitter: Option<Duration>,
-        verbose: Verbose,
-        probability: Option<f64>,
-    ) -> Box<dyn WaitCondition> {
-        let base: Box<dyn WaitCondition> = match self {
-            Commands::Duration { time } => Box::new(conditions::DurationWait {
-                duration: time,
-                jitter,
-                verbose,
-            }),
-            Commands::Normal { mean, std_dev } => Box::new(conditions::NormalWait {
-                mean,
-                std_dev,
-                verbose,
-                jitter,
-            }),
-            Commands::Exponential { lambda } => Box::new(conditions::ExponentialWait {
-                lambda,
-                verbose,
-                jitter,
-            }),
-            Commands::LogNormal { mean, std_dev } => Box::new(conditions::LogNormalWait {
-                mean,
-                std_dev,
-                verbose,
-                jitter,
-            }),
-            Commands::Pareto { scale, shape } => Box::new(conditions::ParetoWait {
-                scale,
-                shape,
-                verbose,
-                jitter,
-            }),
-            Commands::Triangular { min, max, mode } => Box::new(conditions::TriangularWait {
-                min,
-                max,
-                mode,
-                verbose,
-                jitter,
-            }),
-            Commands::Align { interval } => Box::new(conditions::TimeAlignWait {
-                align_interval: interval,
-                verbose,
-            }),
-            Commands::Uniform { min, max } => Box::new(conditions::UniformWait {
-                min,
-                max,
-                verbose,
-                jitter,
-            }),
-            Commands::At { time } => Box::new(conditions::UntilTimeWait {
-                sleep_duration: time,
-                verbose,
-            }),
-            Commands::Gamma { shape, scale } => Box::new(conditions::GammaWait {
-                shape,
-                scale,
-                verbose,
-                jitter,
-            }),
-        };
-
-        match probability {
-            Some(probability) => Box::new(conditions::ProbabilityGate {
-                inner: base,
-                probability,
-                verbose,
-            }),
-            None => base,
+impl Cli {
+    /// The wait these arguments describe. Call [`Wait::validate`] before use.
+    pub fn into_wait(self) -> Wait {
+        Wait {
+            sampler: self.command.into_sampler(),
+            jitter: self.jitter,
+            probability: self.probability,
+            verbose: self.verbose,
         }
     }
 }
@@ -373,95 +244,19 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{FixedOffset, Utc};
-    use chrono_tz::America::New_York;
-
-    fn hms(h: u32, m: u32, s: u32) -> NaiveTime {
-        NaiveTime::from_hms_opt(h, m, s).unwrap()
-    }
-
-    fn secs(n: u64) -> Duration {
-        Duration::from_secs(n)
-    }
-
     #[test]
-    fn test_duration_until_later_today() {
-        let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
-        assert_eq!(duration_until(&now, hms(10, 1, 0)), Ok(secs(60)));
-    }
-
-    #[test]
-    fn test_duration_until_exactly_now_is_zero() {
-        let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
-        assert_eq!(duration_until(&now, hms(10, 0, 0)), Ok(Duration::ZERO));
-    }
-
-    #[test]
-    fn test_duration_until_past_rolls_to_tomorrow() {
-        let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
+    fn test_parse_time_of_day() {
         assert_eq!(
-            duration_until(&now, hms(9, 59, 0)),
-            Ok(secs(24 * 3600 - 60))
+            parse_time_of_day("22:30"),
+            Ok(NaiveTime::from_hms_opt(22, 30, 0).unwrap())
         );
-    }
-
-    #[test]
-    fn test_duration_until_across_midnight() {
-        let now = Utc.with_ymd_and_hms(2025, 6, 1, 23, 59, 58).unwrap();
-        assert_eq!(duration_until(&now, hms(0, 0, 3)), Ok(secs(5)));
-    }
-
-    #[test]
-    fn test_duration_until_respects_fixed_offset() {
-        let tz = FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
-        let now = tz.with_ymd_and_hms(2025, 6, 1, 8, 0, 0).unwrap();
-        assert_eq!(duration_until(&now, hms(9, 30, 0)), Ok(secs(5400)));
-    }
-
-    #[test]
-    fn test_duration_until_spring_forward_gap_does_not_panic() {
-        // 2025-03-09: New York clocks jump from 02:00 EST to 03:00 EDT.
-        let now = New_York.with_ymd_and_hms(2025, 3, 9, 0, 0, 0).unwrap();
-        // 02:30 does not exist; it resolves to 03:30 EDT (07:30 UTC), which
-        // is 2h30m after 00:00 EST (05:00 UTC).
-        assert_eq!(duration_until(&now, hms(2, 30, 0)), Ok(secs(9000)));
-    }
-
-    #[test]
-    fn test_duration_until_spring_forward_gap_already_past() {
-        // At 04:00 EDT the gap has passed, so 02:30 means tomorrow at 02:30 EDT.
-        let now = New_York.with_ymd_and_hms(2025, 3, 9, 4, 0, 0).unwrap();
         assert_eq!(
-            duration_until(&now, hms(2, 30, 0)),
-            Ok(secs(22 * 3600 + 1800))
+            parse_time_of_day("07:05:09"),
+            Ok(NaiveTime::from_hms_opt(7, 5, 9).unwrap())
         );
-    }
-
-    #[test]
-    fn test_duration_until_fall_back_uses_earliest() {
-        // 2025-11-02: New York clocks fall back from 02:00 EDT to 01:00 EST.
-        let now = New_York.with_ymd_and_hms(2025, 11, 2, 0, 0, 0).unwrap();
-        // 01:30 happens twice; the first is 01:30 EDT, 1h30m after 00:00 EDT.
-        assert_eq!(duration_until(&now, hms(1, 30, 0)), Ok(secs(5400)));
-    }
-
-    #[test]
-    fn test_duration_until_fall_back_uses_second_occurrence_when_first_passed() {
-        // 01:45 EDT (05:45 UTC): the first 01:30 has passed, the second
-        // (01:30 EST, 06:30 UTC) is 45 minutes away.
-        let now = New_York.from_utc_datetime(
-            &Utc.with_ymd_and_hms(2025, 11, 2, 5, 45, 0)
-                .unwrap()
-                .naive_utc(),
-        );
-        assert_eq!(duration_until(&now, hms(1, 30, 0)), Ok(secs(2700)));
-    }
-
-    #[test]
-    fn test_parse_time_invalid_format() {
-        assert!(parse_time_until("invalid-time").is_err());
-        assert!(parse_time_until("25:00").is_err());
-        assert!(parse_time_until("10:65").is_err());
+        assert!(parse_time_of_day("invalid-time").is_err());
+        assert!(parse_time_of_day("25:00").is_err());
+        assert!(parse_time_of_day("10:65").is_err());
     }
 
     #[test]
@@ -487,26 +282,97 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_cross_argument_rules() {
-        let uniform = |min, max| Commands::Uniform {
-            min: Duration::from_secs(min),
-            max: Duration::from_secs(max),
-        };
-        assert!(uniform(1, 2).validate().is_ok());
-        assert!(uniform(2, 2).validate().is_err());
-        assert!(uniform(5, 1).validate().is_err());
+    fn test_validation_runs_through_wait() {
+        let invalid = |args: &[&str]| parse(args).unwrap().into_wait().validate().is_err();
+        assert!(invalid(&["u", "2s", "1s"]));
+        assert!(invalid(&["u", "1s", "1s"]));
+        assert!(invalid(&["t", "1s", "2s", "3s"]));
+        assert!(invalid(&["t", "1s", "1s", "1s"]));
+        assert!(!invalid(&["u", "1s", "2s"]));
+        assert!(!invalid(&["t", "0s", "1s", "0s"]));
+        assert!(!invalid(&["t", "0s", "1s", "1s"]));
+    }
 
-        let tri = |min, max, mode| Commands::Triangular {
-            min: Duration::from_millis(min),
-            max: Duration::from_millis(max),
-            mode: Duration::from_millis(mode),
-        };
-        assert!(tri(0, 1000, 500).validate().is_ok());
-        assert!(tri(0, 1000, 0).validate().is_ok());
-        assert!(tri(0, 1000, 1000).validate().is_ok());
-        assert!(tri(1000, 1000, 1000).validate().is_err());
-        assert!(tri(0, 1000, 1500).validate().is_err());
-        assert!(tri(500, 1000, 100).validate().is_err());
+    #[test]
+    fn test_into_wait_carries_global_options() {
+        let wait = parse(&["n", "1s", "100ms", "-j", "50ms", "-p", "0.5", "-v", "250ms"])
+            .unwrap()
+            .into_wait();
+        assert_eq!(
+            wait,
+            Wait {
+                sampler: Sampler::Normal {
+                    mean: Duration::from_secs(1),
+                    std_dev: Duration::from_millis(100),
+                },
+                jitter: Some(Duration::from_millis(50)),
+                probability: Some(0.5),
+                verbose: Verbose::Every(Duration::from_millis(250)),
+            }
+        );
+    }
+
+    #[test]
+    fn test_every_command_maps_to_its_sampler() {
+        let cases: [(&[&str], Sampler); 10] = [
+            (&["d", "1s"], Sampler::Fixed(Duration::from_secs(1))),
+            (&["e", "2"], Sampler::Exponential { lambda: 2.0 }),
+            (
+                &["n", "1s", "1ms"],
+                Sampler::Normal {
+                    mean: Duration::from_secs(1),
+                    std_dev: Duration::from_millis(1),
+                },
+            ),
+            (
+                &["ln", "1s", "1ms"],
+                Sampler::LogNormal {
+                    mean: Duration::from_secs(1),
+                    std_dev: Duration::from_millis(1),
+                },
+            ),
+            (
+                &["par", "1s", "2"],
+                Sampler::Pareto {
+                    scale: Duration::from_secs(1),
+                    shape: 2.0,
+                },
+            ),
+            (
+                &["u", "1s", "2s"],
+                Sampler::Uniform {
+                    min: Duration::from_secs(1),
+                    max: Duration::from_secs(2),
+                },
+            ),
+            (
+                &["t", "1s", "3s", "2s"],
+                Sampler::Triangular {
+                    min: Duration::from_secs(1),
+                    max: Duration::from_secs(3),
+                    mode: Duration::from_secs(2),
+                },
+            ),
+            (
+                &["g", "2", "1s"],
+                Sampler::Gamma {
+                    shape: 2.0,
+                    scale: Duration::from_secs(1),
+                },
+            ),
+            (&["a", "1m"], Sampler::Align(Duration::from_secs(60))),
+            (
+                &["at", "22:30"],
+                Sampler::At(NaiveTime::from_hms_opt(22, 30, 0).unwrap()),
+            ),
+        ];
+        for (args, sampler) in cases {
+            assert_eq!(
+                parse(args).unwrap().into_wait().sampler,
+                sampler,
+                "{args:?}"
+            );
+        }
     }
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {

@@ -1,246 +1,191 @@
-//! Wait conditions: rules for choosing how long to wait, and the wait itself.
+//! Wait conditions: what to wait for, and the wait itself.
 //!
-//! Every condition implements [`WaitCondition::sample`], which draws one
-//! [`Sample`]. Waiting is a single shared path: draw a sample, then hand it to
-//! a [`Sleeper`]. Tests substitute their own sleeper to see exactly what would
-//! have been slept without sleeping.
+//! A [`Wait`] combines a [`Sampler`], which picks a base duration, with
+//! optional jitter, an optional probability gate, and a progress setting.
+//! Drawing a wait produces a [`Sample`]; performing it hands that sample to a
+//! [`Sleeper`]. Tests substitute their own random number generator, sleeper,
+//! and clock so they can check exactly what would happen without waiting.
+//!
+//! ```
+//! use dozr::conditions::{Sampler, Wait};
+//! use rand::SeedableRng;
+//! use std::time::Duration;
+//!
+//! let wait = Wait::new(Sampler::Uniform {
+//!     min: Duration::from_millis(100),
+//!     max: Duration::from_millis(200),
+//! })
+//! .with_jitter(Duration::from_millis(50));
+//!
+//! let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+//! let sample = wait.sample(&mut rng).unwrap();
+//! assert!(sample.duration >= Duration::from_millis(100));
+//! assert!(sample.duration <= Duration::from_millis(250));
+//! ```
 
-use crate::{Verbose, adaptive_verbose_wait, verbose_wait};
+use crate::progress::{
+    Clock, MIN_VERBOSE_PERIOD, SystemClock, Verbose, adaptive_verbose_wait_with, verbose_wait_with,
+};
 use anyhow::{Result, bail};
+use chrono::{
+    DateTime, Duration as ChronoDuration, Local, LocalResult, NaiveTime, Offset, TimeZone,
+};
 use rand::{Rng, RngCore};
 use rand_distr::{Distribution, Exp, Gamma, LogNormal, Normal, Pareto, Triangular, Uniform};
+use std::io::Write;
+use std::time::Duration;
 
-use chrono::Local;
-
-use std::time::{Duration, SystemTime};
-
-/// One draw from a [`WaitCondition`].
+/// Picks the base duration of a wait.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Sample {
-    /// How long to wait.
-    pub duration: Duration,
-    /// The distribution produced a negative value, which was raised to zero
-    /// before any jitter was added.
-    pub clamped: bool,
-    /// Set when a [`ProbabilityGate`] decided not to wait.
-    pub skipped: Option<Skip>,
+pub enum Sampler {
+    /// Always the same duration.
+    Fixed(Duration),
+    /// Normal distribution. Negative samples become zero.
+    Normal { mean: Duration, std_dev: Duration },
+    /// Exponential distribution with rate `lambda` per second (mean `1 / lambda` seconds).
+    Exponential { lambda: f64 },
+    /// Log-normal distribution with the given mean and standard deviation of the waits.
+    LogNormal { mean: Duration, std_dev: Duration },
+    /// Pareto distribution with minimum wait `scale` and tail index `shape`.
+    Pareto { scale: Duration, shape: f64 },
+    /// Uniform distribution on `[min, max)`.
+    Uniform { min: Duration, max: Duration },
+    /// Triangular distribution between `min` and `max`, peaking at `mode`.
+    Triangular {
+        min: Duration,
+        max: Duration,
+        mode: Duration,
+    },
+    /// Gamma distribution; the mean wait is `shape` times `scale`.
+    Gamma { shape: f64, scale: Duration },
+    /// Until the next multiple of the interval since the Unix epoch.
+    Align(Duration),
+    /// Until the next occurrence of a local wall-clock time.
+    At(NaiveTime),
 }
 
-impl Sample {
-    /// A plain wait of `duration`.
-    pub fn of(duration: Duration) -> Self {
-        Sample {
-            duration,
-            clamped: false,
-            skipped: None,
-        }
-    }
+fn fmt(d: Duration) -> humantime::FormattedDuration {
+    humantime::format_duration(d)
 }
 
-/// Details of a skipped probabilistic wait.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Skip {
-    pub probability: f64,
-    pub roll: f64,
-}
-
-/// Carries out a [`Sample`]: reports on it and sleeps for it.
-pub trait Sleeper {
-    fn perform(&mut self, sample: &Sample, verbose: Verbose);
-}
-
-/// The real [`Sleeper`]: writes progress to stderr and blocks the thread.
-pub struct ThreadSleeper;
-
-impl Sleeper for ThreadSleeper {
-    fn perform(&mut self, sample: &Sample, verbose: Verbose) {
-        if let Some(skip) = sample.skipped {
-            if verbose.is_on() {
-                eprintln!(
-                    "Probabilistic wait: Skipping sleep (probability: {}, roll: {:.2})",
-                    skip.probability, skip.roll
-                );
-            }
-            return;
-        }
-        if sample.clamped && verbose.is_on() {
-            eprintln!(
-                "[{}] [DOZR] Sampled duration was negative and was clamped to zero.",
-                Local::now().format("%H:%M:%S")
-            );
-        }
-        perform_wait(sample.duration, verbose);
-    }
-}
-
-/// Sleeps for `sleep_duration`, printing progress according to `verbose`.
-fn perform_wait(sleep_duration: Duration, verbose: Verbose) {
-    let report = |remaining: Duration, decimals: usize| {
-        let now = Local::now().format("%H:%M:%S");
-        if remaining.is_zero() {
-            eprintln!("[{now}] Wait complete.");
-        } else {
-            eprintln!(
-                "[{now}] [DOZR] Time remaining: {:.*}s",
-                decimals,
-                remaining.as_secs_f64()
-            );
-        }
-    };
-    match verbose {
-        Verbose::Off => std::thread::sleep(sleep_duration),
-        Verbose::Adaptive => adaptive_verbose_wait(sleep_duration, |r| report(r, 0)),
-        Verbose::Every(period) => {
-            let decimals = if period < Duration::from_secs(1) {
-                1
-            } else {
-                0
-            };
-            verbose_wait(sleep_duration, period, |r| report(r, decimals));
-        }
-    }
-}
-
-/// Source of random jitter, abstracted so tests can supply a fixed value.
-pub trait JitterGenerator {
-    fn generate(&mut self, max_jitter: Duration) -> Duration;
-}
-
-/// [`JitterGenerator`] backed by a random number generator.
-pub struct RandomJitterGenerator<T: Rng> {
-    rng: T,
-}
-
-impl<T: Rng> RandomJitterGenerator<T> {
-    pub fn new(rng: T) -> Self {
-        Self { rng }
-    }
-}
-
-impl<T: Rng> JitterGenerator for RandomJitterGenerator<T> {
-    fn generate(&mut self, max_jitter: Duration) -> Duration {
-        if max_jitter.is_zero() {
-            return Duration::ZERO;
-        }
-        let jitter_nanos = self.rng.random_range(0..=max_jitter.as_nanos() as u64);
-        Duration::from_nanos(jitter_nanos)
-    }
-}
-
-/// Draws up to `max_jitter` of random jitter from `rng`.
-fn sample_jitter(rng: &mut dyn RngCore, max_jitter: Option<Duration>) -> Duration {
-    RandomJitterGenerator::new(rng).generate(max_jitter.unwrap_or(Duration::ZERO))
-}
-
-/// Converts a sampled number of seconds to a `Duration`. Negative values and
-/// NaN become zero, and are reported as clamped.
-fn secs_to_duration(secs: f64) -> (Duration, bool) {
-    if secs.is_finite() && secs > 0.0 {
-        (Duration::from_secs_f64(secs), false)
-    } else {
-        (Duration::ZERO, secs != 0.0)
-    }
-}
-
-/// A rule for deciding how long to wait.
-pub trait WaitCondition {
-    /// Draws one sample using `rng`. Pass a seeded generator for
-    /// reproducible results; conditions with no randomness ignore it.
-    fn sample(&self, rng: &mut dyn RngCore) -> Result<Sample>;
-
-    /// How this condition reports progress while waiting.
-    fn verbose(&self) -> Verbose;
-
-    /// Calculates a wait duration using the supplied random number generator.
-    fn sample_with(&self, rng: &mut dyn RngCore) -> Result<Duration> {
-        Ok(self.sample(rng)?.duration)
-    }
-
-    /// Calculates a wait duration using the thread-local random number generator.
-    fn calculate_wait_duration(&self) -> Result<Duration> {
-        self.sample_with(&mut rand::rng())
-    }
-
-    /// Draws exactly one sample and passes it to `sleeper`.
-    fn wait_using(&self, rng: &mut dyn RngCore, sleeper: &mut dyn Sleeper) -> Result<()> {
-        let sample = self.sample(rng)?;
-        sleeper.perform(&sample, self.verbose());
+fn require_positive(what: &str, v: f64) -> Result<()> {
+    if v.is_finite() && v > 0.0 {
         Ok(())
-    }
-
-    /// Performs the wait.
-    fn wait(&self) -> Result<()> {
-        self.wait_using(&mut rand::rng(), &mut ThreadSleeper)
+    } else {
+        bail!("{what} must be greater than 0, got {v}")
     }
 }
 
-/// Implements [`WaitCondition`] for a jittered distribution whose `$body`
-/// evaluates to a sampled number of seconds.
-macro_rules! distribution_wait {
-    ($ty:ty, |$self_:ident, $rng:ident| $body:block) => {
-        impl WaitCondition for $ty {
-            fn sample(&$self_, $rng: &mut dyn RngCore) -> Result<Sample> {
-                let secs: f64 = $body;
-                let (base, clamped) = secs_to_duration(secs);
-                Ok(Sample {
-                    duration: base + sample_jitter($rng, $self_.jitter),
-                    clamped,
-                    skipped: None,
-                })
+impl Sampler {
+    /// Checks the parameters, naming the offending one on failure.
+    pub fn validate(&self) -> Result<()> {
+        match *self {
+            Sampler::Fixed(_) | Sampler::Normal { .. } | Sampler::At(_) => Ok(()),
+            Sampler::Exponential { lambda } => require_positive("exponential <LAMBDA>", lambda),
+            Sampler::LogNormal { mean, .. } if mean.is_zero() => {
+                bail!("log-normal <MEAN> must be greater than 0")
             }
-
-            fn verbose(&self) -> Verbose {
-                self.verbose
+            Sampler::LogNormal { .. } => Ok(()),
+            Sampler::Pareto { scale, .. } if scale.is_zero() => {
+                bail!("pareto <SCALE> must be greater than 0")
             }
+            Sampler::Pareto { shape, .. } => require_positive("pareto <SHAPE>", shape),
+            Sampler::Uniform { min, max } if min >= max => bail!(
+                "uniform <MIN> must be less than <MAX>, got {} and {}",
+                fmt(min),
+                fmt(max)
+            ),
+            Sampler::Uniform { .. } => Ok(()),
+            Sampler::Triangular { min, max, .. } if min >= max => bail!(
+                "triangular <MIN> must be less than <MAX>, got {} and {}",
+                fmt(min),
+                fmt(max)
+            ),
+            Sampler::Triangular { min, max, mode } if mode < min || mode > max => bail!(
+                "triangular <MODE> must be between <MIN> and <MAX>, got {} outside {}..{}",
+                fmt(mode),
+                fmt(min),
+                fmt(max)
+            ),
+            Sampler::Triangular { .. } => Ok(()),
+            Sampler::Gamma { shape, .. } if !(shape.is_finite() && shape > 0.0) => {
+                require_positive("gamma <SHAPE>", shape)
+            }
+            Sampler::Gamma { scale, .. } if scale.is_zero() => {
+                bail!("gamma <SCALE> must be greater than 0")
+            }
+            Sampler::Gamma { .. } => Ok(()),
+            Sampler::Align(interval) if interval.is_zero() => {
+                bail!("align <INTERVAL> must be greater than 0")
+            }
+            Sampler::Align(_) => Ok(()),
         }
-    };
-}
+    }
 
-pub struct DurationWait {
-    pub duration: Duration,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-impl DurationWait {
-    fn calculate_sleep_duration(&self, jitter_gen: &mut dyn JitterGenerator) -> Duration {
-        let max_jitter = self.jitter.unwrap_or(Duration::ZERO);
-        self.duration + jitter_gen.generate(max_jitter)
+    /// Draws a base duration at time `now`. The flag is true when a negative
+    /// value was raised to zero.
+    fn draw(&self, rng: &mut dyn RngCore, now: &DateTime<Local>) -> Result<(Duration, bool)> {
+        let secs = match *self {
+            Sampler::Fixed(d) => return Ok((d, false)),
+            Sampler::Align(interval) => {
+                let since_epoch = now
+                    .signed_duration_since(DateTime::UNIX_EPOCH)
+                    .to_std()
+                    .unwrap_or_default();
+                return Ok((duration_to_next_alignment(since_epoch, interval), false));
+            }
+            Sampler::At(time) => {
+                return duration_until(now, time)
+                    .map(|d| (d, false))
+                    .map_err(anyhow::Error::msg);
+            }
+            Sampler::Normal { mean, std_dev } => {
+                Normal::new(mean.as_secs_f64(), std_dev.as_secs_f64())?.sample(rng)
+            }
+            Sampler::Exponential { lambda } => Exp::new(lambda)?.sample(rng),
+            Sampler::LogNormal { mean, std_dev } => {
+                log_normal_from_mean_sd(mean.as_secs_f64(), std_dev.as_secs_f64())?.sample(rng)
+            }
+            Sampler::Pareto { scale, shape } => {
+                Pareto::new(scale.as_secs_f64(), shape)?.sample(rng)
+            }
+            Sampler::Uniform { min, max } => {
+                Uniform::new(min.as_secs_f64(), max.as_secs_f64())?.sample(rng)
+            }
+            Sampler::Triangular { min, max, mode } => {
+                Triangular::new(min.as_secs_f64(), max.as_secs_f64(), mode.as_secs_f64())?
+                    .sample(rng)
+            }
+            Sampler::Gamma { shape, scale } => Gamma::new(shape, scale.as_secs_f64())?.sample(rng),
+        };
+        Ok(secs_to_duration(secs))
     }
 }
 
-impl WaitCondition for DurationWait {
-    fn sample(&self, rng: &mut dyn RngCore) -> Result<Sample> {
-        let mut jitter_gen = RandomJitterGenerator::new(rng);
-        Ok(Sample::of(self.calculate_sleep_duration(&mut jitter_gen)))
+/// Converts a sampled number of seconds to a `Duration`.
+///
+/// Negative values and NaN become zero and are reported as clamped. Values
+/// too large for a `Duration`, including infinity, saturate to
+/// `Duration::MAX` rather than panicking.
+fn secs_to_duration(secs: f64) -> (Duration, bool) {
+    if secs.is_nan() || secs < 0.0 {
+        (Duration::ZERO, true)
+    } else {
+        (
+            Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX),
+            false,
+        )
     }
+}
 
-    fn verbose(&self) -> Verbose {
-        self.verbose
+/// Draws up to `max_jitter` of uniform random jitter from `rng`.
+fn sample_jitter(rng: &mut dyn RngCore, max_jitter: Duration) -> Duration {
+    if max_jitter.is_zero() {
+        return Duration::ZERO;
     }
+    let max_nanos = u64::try_from(max_jitter.as_nanos()).unwrap_or(u64::MAX);
+    Duration::from_nanos(rng.random_range(0..=max_nanos))
 }
-
-pub struct NormalWait {
-    pub mean: Duration,
-    pub std_dev: Duration,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(NormalWait, |self, rng| {
-    Normal::new(self.mean.as_secs_f64(), self.std_dev.as_secs_f64())?.sample(rng)
-});
-
-pub struct ExponentialWait {
-    /// Rate parameter, in events per second. The mean wait is `1 / lambda` seconds.
-    pub lambda: f64,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(ExponentialWait, |self, rng| {
-    Exp::new(self.lambda)?.sample(rng)
-});
 
 /// Builds a log-normal distribution from its real (linear-space) mean and
 /// standard deviation, both in seconds.
@@ -272,74 +217,6 @@ pub fn log_normal_from_mean_sd(mean_secs: f64, std_dev_secs: f64) -> Result<LogN
     )?)
 }
 
-pub struct LogNormalWait {
-    /// Mean of the sampled waits. Must be greater than zero.
-    pub mean: Duration,
-    /// Standard deviation of the sampled waits.
-    pub std_dev: Duration,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(LogNormalWait, |self, rng| {
-    log_normal_from_mean_sd(self.mean.as_secs_f64(), self.std_dev.as_secs_f64())?.sample(rng)
-});
-
-pub struct ParetoWait {
-    /// Minimum wait. Must be greater than zero.
-    pub scale: Duration,
-    /// Tail index; smaller values give a heavier tail. Must be greater than zero.
-    pub shape: f64,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(ParetoWait, |self, rng| {
-    Pareto::new(self.scale.as_secs_f64(), self.shape)?.sample(rng)
-});
-
-pub struct UniformWait {
-    pub min: Duration,
-    pub max: Duration,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(UniformWait, |self, rng| {
-    Uniform::new(self.min.as_secs_f64(), self.max.as_secs_f64())?.sample(rng)
-});
-
-pub struct TriangularWait {
-    pub min: Duration,
-    pub max: Duration,
-    /// Most likely wait. Must be between `min` and `max`.
-    pub mode: Duration,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(TriangularWait, |self, rng| {
-    Triangular::new(
-        self.min.as_secs_f64(),
-        self.max.as_secs_f64(),
-        self.mode.as_secs_f64(),
-    )?
-    .sample(rng)
-});
-
-pub struct GammaWait {
-    /// Shape parameter. Must be greater than zero.
-    pub shape: f64,
-    /// Scale parameter. Must be greater than zero.
-    pub scale: Duration,
-    pub verbose: Verbose,
-    pub jitter: Option<Duration>,
-}
-
-distribution_wait!(GammaWait, |self, rng| {
-    Gamma::new(self.shape, self.scale.as_secs_f64())?.sample(rng)
-});
-
 /// Time from `since_epoch` until the next multiple of `interval`.
 ///
 /// When `since_epoch` is already on a boundary, a full `interval` is returned
@@ -357,114 +234,282 @@ pub fn duration_to_next_alignment(since_epoch: Duration, interval: Duration) -> 
     }
 }
 
-pub struct TimeAlignWait {
-    pub align_interval: Duration,
-    pub verbose: Verbose,
-}
-
-impl WaitCondition for TimeAlignWait {
-    fn sample(&self, _rng: &mut dyn RngCore) -> Result<Sample> {
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-        Ok(Sample::of(duration_to_next_alignment(
-            now,
-            self.align_interval,
-        )))
-    }
-
-    fn verbose(&self) -> Verbose {
-        self.verbose
-    }
-}
-
-pub struct UntilTimeWait {
-    pub sleep_duration: Duration,
-    pub verbose: Verbose,
-}
-
-impl WaitCondition for UntilTimeWait {
-    fn sample(&self, _rng: &mut dyn RngCore) -> Result<Sample> {
-        Ok(Sample::of(self.sleep_duration))
-    }
-
-    fn verbose(&self) -> Verbose {
-        self.verbose
-    }
-}
-
-/// Wraps any [`WaitCondition`] so that it only waits with the given probability.
+/// Time from `now` until the next occurrence of the wall-clock time `target`
+/// in `now`'s time zone.
 ///
-/// The inner condition's own sample, including any jitter, is used unchanged
-/// when the wait happens.
-pub struct ProbabilityGate {
-    pub inner: Box<dyn WaitCondition>,
-    /// Chance of waiting, from 0.0 (never) to 1.0 (always).
-    pub probability: f64,
-    pub verbose: Verbose,
-}
+/// - A target equal to `now` returns zero; an earlier target rolls to tomorrow.
+/// - A target inside a daylight-saving gap (a local time that does not exist)
+///   is moved forward by the length of the gap, so 02:30 on a spring-forward
+///   night becomes 03:30.
+/// - A target that occurs twice (fall back) uses the earliest occurrence that
+///   is not in the past.
+pub fn duration_until<Tz: TimeZone>(
+    now: &DateTime<Tz>,
+    target: NaiveTime,
+) -> std::result::Result<Duration, String> {
+    let tz = now.timezone();
+    let mut date = now.date_naive();
 
-impl WaitCondition for ProbabilityGate {
-    fn sample(&self, rng: &mut dyn RngCore) -> Result<Sample> {
-        let roll: f64 = rng.random_range(0.0..1.0);
-        // `roll` is in [0, 1), so probability 0.0 never waits and 1.0 always does.
-        if roll < self.probability {
-            self.inner.sample(rng)
-        } else {
-            Ok(Sample {
-                duration: Duration::ZERO,
-                clamped: false,
-                skipped: Some(Skip {
-                    probability: self.probability,
-                    roll,
-                }),
-            })
+    // Two days is always enough: today, or failing that tomorrow. The third
+    // iteration only guards against a zone that skips an entire day.
+    for _ in 0..3 {
+        let naive = date.and_time(target);
+        let candidate = match tz.from_local_datetime(&naive) {
+            LocalResult::Single(dt) => (dt >= *now).then_some(dt),
+            LocalResult::Ambiguous(earliest, latest) => {
+                if earliest >= *now {
+                    Some(earliest)
+                } else if latest >= *now {
+                    Some(latest)
+                } else {
+                    None
+                }
+            }
+            LocalResult::None => {
+                // Interpret the wall time using the offset in force before the
+                // gap, which lands just after it.
+                let before = tz.offset_from_utc_datetime(&(naive - ChronoDuration::days(1)));
+                let utc =
+                    naive - ChronoDuration::seconds(i64::from(before.fix().local_minus_utc()));
+                let dt = tz.from_utc_datetime(&utc);
+                (dt >= *now).then_some(dt)
+            }
+        };
+
+        if let Some(target_dt) = candidate {
+            return target_dt
+                .signed_duration_since(now.clone())
+                .to_std()
+                .map_err(|e| e.to_string());
         }
+        date = date
+            .succ_opt()
+            .ok_or_else(|| "date out of range".to_string())?;
     }
-
-    fn verbose(&self) -> Verbose {
-        self.verbose
-    }
+    Err(format!("could not resolve {target} to a future time"))
 }
 
-/// Fixed-duration wait gated by a probability.
-///
-/// Superseded by [`ProbabilityGate`], which works with any condition and
-/// keeps its jitter.
-#[deprecated(
-    since = "0.4.2",
-    note = "use ProbabilityGate, which wraps any WaitCondition and keeps its jitter"
-)]
-pub struct ProbabilisticWait {
+/// One draw from a [`Wait`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sample {
+    /// How long to wait.
     pub duration: Duration,
+    /// The sampler produced a negative value, which was raised to zero
+    /// before any jitter was added.
+    pub clamped: bool,
+    /// Set when the probability gate decided not to wait.
+    pub skipped: Option<Skip>,
+}
+
+impl Sample {
+    /// A plain wait of `duration`.
+    pub fn of(duration: Duration) -> Self {
+        Sample {
+            duration,
+            clamped: false,
+            skipped: None,
+        }
+    }
+}
+
+/// Details of a skipped probabilistic wait.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Skip {
     pub probability: f64,
+    pub roll: f64,
+}
+
+/// A complete wait: a sampler plus jitter, probability, and progress settings.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Wait {
+    pub sampler: Sampler,
+    /// Up to this much uniform random time is added to every sample.
+    pub jitter: Option<Duration>,
+    /// Chance of waiting at all, from 0.0 (never) to 1.0 (always).
+    pub probability: Option<f64>,
     pub verbose: Verbose,
 }
 
-#[allow(deprecated)]
-impl WaitCondition for ProbabilisticWait {
-    fn sample(&self, rng: &mut dyn RngCore) -> Result<Sample> {
-        ProbabilityGate {
-            inner: Box::new(DurationWait {
-                duration: self.duration,
-                verbose: Verbose::Off,
-                jitter: None,
-            }),
-            probability: self.probability,
-            verbose: self.verbose,
+impl Wait {
+    /// A wait with no jitter, no probability gate, and no progress output.
+    pub fn new(sampler: Sampler) -> Self {
+        Wait {
+            sampler,
+            jitter: None,
+            probability: None,
+            verbose: Verbose::Off,
         }
-        .sample(rng)
     }
 
-    fn verbose(&self) -> Verbose {
-        self.verbose
+    pub fn with_jitter(mut self, max_jitter: Duration) -> Self {
+        self.jitter = Some(max_jitter);
+        self
+    }
+
+    pub fn with_probability(mut self, probability: f64) -> Self {
+        self.probability = Some(probability);
+        self
+    }
+
+    pub fn with_verbose(mut self, verbose: Verbose) -> Self {
+        self.verbose = verbose;
+        self
+    }
+
+    /// Checks every parameter, naming the offending one on failure.
+    pub fn validate(&self) -> Result<()> {
+        self.sampler.validate()?;
+        // Written without let-chains to keep the 1.85 minimum Rust version.
+        match self.probability {
+            Some(p) if !(0.0..=1.0).contains(&p) => {
+                bail!("--probability must be between 0.0 and 1.0, got {p}")
+            }
+            _ => {}
+        }
+        match self.verbose {
+            Verbose::Every(period) if period < MIN_VERBOSE_PERIOD => bail!(
+                "--verbose update period must be at least {}",
+                fmt(MIN_VERBOSE_PERIOD)
+            ),
+            _ => Ok(()),
+        }
+    }
+
+    /// Draws one sample at the current local time.
+    pub fn sample(&self, rng: &mut dyn RngCore) -> Result<Sample> {
+        self.sample_at(rng, &Local::now())
+    }
+
+    /// Draws one sample as if the local time were `now`.
+    ///
+    /// The probability gate is rolled first; a skipped wait draws nothing
+    /// else. Otherwise the sampler is drawn and jitter added.
+    pub fn sample_at(&self, rng: &mut dyn RngCore, now: &DateTime<Local>) -> Result<Sample> {
+        self.validate()?;
+        if let Some(probability) = self.probability {
+            let roll: f64 = rng.random_range(0.0..1.0);
+            // `roll` is in [0, 1), so 0.0 never waits and 1.0 always does.
+            if roll >= probability {
+                return Ok(Sample {
+                    duration: Duration::ZERO,
+                    clamped: false,
+                    skipped: Some(Skip { probability, roll }),
+                });
+            }
+        }
+        let (base, clamped) = self.sampler.draw(rng, now)?;
+        let jitter = sample_jitter(rng, self.jitter.unwrap_or_default());
+        Ok(Sample {
+            duration: base.saturating_add(jitter),
+            clamped,
+            skipped: None,
+        })
+    }
+
+    /// Draws a duration using the thread-local random number generator.
+    pub fn calculate(&self) -> Result<Duration> {
+        Ok(self.sample(&mut rand::rng())?.duration)
+    }
+
+    /// Draws exactly one sample and passes it to `sleeper`.
+    pub fn wait_using(&self, rng: &mut dyn RngCore, sleeper: &mut dyn Sleeper) -> Result<()> {
+        let sample = self.sample(rng)?;
+        sleeper.perform(&sample, self.verbose);
+        Ok(())
+    }
+
+    /// Performs the wait, reporting progress on stderr.
+    pub fn wait(&self) -> Result<()> {
+        self.wait_using(&mut rand::rng(), &mut ConsoleSleeper::stderr())
+    }
+}
+
+/// Carries out a [`Sample`]: reports on it and sleeps for it.
+pub trait Sleeper {
+    fn perform(&mut self, sample: &Sample, verbose: Verbose);
+}
+
+/// A [`Sleeper`] that writes timestamped progress lines to `out` and sleeps
+/// on `clock`.
+pub struct ConsoleSleeper<W: Write, C: Clock> {
+    pub out: W,
+    pub clock: C,
+}
+
+impl ConsoleSleeper<std::io::Stderr, SystemClock> {
+    /// Progress on stderr, real sleeping.
+    pub fn stderr() -> Self {
+        ConsoleSleeper {
+            out: std::io::stderr(),
+            clock: SystemClock::new(),
+        }
+    }
+}
+
+impl<W: Write, C: Clock> Sleeper for ConsoleSleeper<W, C> {
+    fn perform(&mut self, sample: &Sample, verbose: Verbose) {
+        // Progress output is best effort: a closed stderr must not stop the wait.
+        let out = &mut self.out;
+        let stamp = || Local::now().format("%H:%M:%S");
+
+        if let Some(skip) = sample.skipped {
+            if verbose.is_on() {
+                let _ = writeln!(
+                    out,
+                    "Probabilistic wait: Skipping sleep (probability: {}, roll: {:.2})",
+                    skip.probability, skip.roll
+                );
+            }
+            return;
+        }
+        if sample.clamped && verbose.is_on() {
+            let _ = writeln!(
+                out,
+                "[{}] [DOZR] Sampled duration was negative and was clamped to zero.",
+                stamp()
+            );
+        }
+
+        let mut report = |remaining: Duration, decimals: usize| {
+            let _ = if remaining.is_zero() {
+                writeln!(out, "[{}] Wait complete.", stamp())
+            } else {
+                writeln!(
+                    out,
+                    "[{}] [DOZR] Time remaining: {:.*}s",
+                    stamp(),
+                    decimals,
+                    remaining.as_secs_f64()
+                )
+            };
+        };
+        match verbose {
+            Verbose::Off => self.clock.sleep(sample.duration),
+            Verbose::Adaptive => {
+                adaptive_verbose_wait_with(&mut self.clock, sample.duration, |r| report(r, 0))
+            }
+            Verbose::Every(period) => {
+                let decimals = if period < Duration::from_secs(1) {
+                    1
+                } else {
+                    0
+                };
+                verbose_wait_with(&mut self.clock, sample.duration, period, |r| {
+                    report(r, decimals)
+                });
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::progress::tests::FakeClock;
+    use chrono::{FixedOffset, Utc};
+    use chrono_tz::America::New_York;
     use rand::SeedableRng;
-    use rand::rngs::{StdRng, ThreadRng};
-    use std::time::Instant;
+    use rand::rngs::StdRng;
 
     const SAMPLES: usize = 20_000;
 
@@ -476,14 +521,8 @@ mod tests {
         Duration::from_secs_f64(x)
     }
 
-    struct MockJitterGenerator {
-        jitter: Duration,
-    }
-
-    impl JitterGenerator for MockJitterGenerator {
-        fn generate(&mut self, _max_jitter: Duration) -> Duration {
-            self.jitter
-        }
+    fn rng(seed: u64) -> StdRng {
+        StdRng::seed_from_u64(seed)
     }
 
     /// Records every sample it is asked to perform instead of sleeping.
@@ -498,16 +537,111 @@ mod tests {
         }
     }
 
-    /// Draws `SAMPLES` durations from `condition` with a fixed seed and
-    /// returns their mean and standard deviation in seconds.
-    fn sample_stats(condition: &dyn WaitCondition, seed: u64) -> (f64, f64) {
-        let mut rng = StdRng::seed_from_u64(seed);
-        let xs: Vec<f64> = (0..SAMPLES)
-            .map(|_| condition.sample_with(&mut rng).unwrap().as_secs_f64())
-            .collect();
-        let mean = xs.iter().sum::<f64>() / xs.len() as f64;
-        let var = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (xs.len() - 1) as f64;
-        (mean, var.sqrt())
+    /// Runs `sample` through a console sleeper with a fake clock and
+    /// returns what it printed and how long it slept in total.
+    fn console(sample: Sample, verbose: Verbose) -> (String, Duration) {
+        let mut sleeper = ConsoleSleeper {
+            out: Vec::new(),
+            clock: FakeClock::default(),
+        };
+        sleeper.perform(&sample, verbose);
+        (String::from_utf8(sleeper.out).unwrap(), sleeper.clock.now)
+    }
+
+    /// One of every random sampler, with its expected mean and standard
+    /// deviation in seconds and the relative tolerance for the sd check.
+    fn random_samplers() -> Vec<(&'static str, Sampler, f64, f64, f64)> {
+        let tri = (1.0, 4.0, 2.0);
+        let tri_var = (tri.0 * tri.0 + tri.1 * tri.1 + tri.2 * tri.2
+            - tri.0 * tri.1
+            - tri.0 * tri.2
+            - tri.1 * tri.2)
+            / 18.0;
+        // Pareto shape 6 keeps the variance finite and its estimate stable.
+        let (p_scale, p_shape) = (1.0, 6.0);
+        vec![
+            (
+                "normal",
+                Sampler::Normal {
+                    mean: secs(1.0),
+                    std_dev: ms(100),
+                },
+                1.0,
+                0.1,
+                0.02,
+            ),
+            (
+                "exponential",
+                Sampler::Exponential { lambda: 2.0 },
+                0.5,
+                0.5,
+                0.02,
+            ),
+            (
+                "log-normal",
+                Sampler::LogNormal {
+                    mean: secs(1.0),
+                    std_dev: ms(500),
+                },
+                1.0,
+                0.5,
+                0.05,
+            ),
+            (
+                "pareto",
+                Sampler::Pareto {
+                    scale: secs(p_scale),
+                    shape: p_shape,
+                },
+                p_shape * p_scale / (p_shape - 1.0),
+                p_scale / (p_shape - 1.0) * (p_shape / (p_shape - 2.0)).sqrt(),
+                0.05,
+            ),
+            (
+                "uniform",
+                Sampler::Uniform {
+                    min: secs(1.0),
+                    max: secs(3.0),
+                },
+                2.0,
+                2.0 / 12f64.sqrt(),
+                0.02,
+            ),
+            (
+                "triangular",
+                Sampler::Triangular {
+                    min: secs(tri.0),
+                    max: secs(tri.1),
+                    mode: secs(tri.2),
+                },
+                (tri.0 + tri.1 + tri.2) / 3.0,
+                tri_var.sqrt(),
+                0.02,
+            ),
+            (
+                "gamma",
+                Sampler::Gamma {
+                    shape: 2.0,
+                    scale: secs(1.5),
+                },
+                3.0,
+                2f64.sqrt() * 1.5,
+                0.02,
+            ),
+        ]
+    }
+
+    /// Every sampler variant, including the deterministic ones.
+    fn all_samplers() -> Vec<Sampler> {
+        let mut all: Vec<Sampler> = random_samplers().into_iter().map(|t| t.1).collect();
+        all.push(Sampler::Fixed(secs(1.0)));
+        all.push(Sampler::Align(secs(60.0)));
+        all.push(Sampler::At(NaiveTime::from_hms_opt(12, 0, 0).unwrap()));
+        all
+    }
+
+    fn noon() -> DateTime<Local> {
+        Local.with_ymd_and_hms(2025, 6, 1, 11, 59, 30).unwrap()
     }
 
     fn assert_close(label: &str, actual: f64, expected: f64, rel_tol: f64) {
@@ -520,315 +654,176 @@ mod tests {
         );
     }
 
-    /// One of every condition, with jitter where it applies.
-    fn all_conditions() -> Vec<Box<dyn WaitCondition>> {
-        let jitter = Some(ms(50));
-        let verbose = Verbose::Off;
-        vec![
-            Box::new(DurationWait {
-                duration: secs(1.0),
-                verbose,
-                jitter: Some(secs(1.0)),
-            }),
-            Box::new(NormalWait {
-                mean: secs(1.0),
-                std_dev: ms(100),
-                verbose,
-                jitter,
-            }),
-            Box::new(ExponentialWait {
-                lambda: 1.0,
-                verbose,
-                jitter,
-            }),
-            Box::new(LogNormalWait {
-                mean: secs(1.0),
-                std_dev: ms(500),
-                verbose,
-                jitter,
-            }),
-            Box::new(ParetoWait {
-                scale: secs(1.0),
-                shape: 3.0,
-                verbose,
-                jitter,
-            }),
-            Box::new(UniformWait {
-                min: secs(1.0),
-                max: secs(2.0),
-                verbose,
-                jitter,
-            }),
-            Box::new(TriangularWait {
-                min: secs(0.0),
-                max: secs(2.0),
-                mode: secs(1.0),
-                verbose,
-                jitter,
-            }),
-            Box::new(GammaWait {
-                shape: 2.0,
-                scale: secs(1.0),
-                verbose,
-                jitter,
-            }),
-            Box::new(ProbabilityGate {
-                inner: Box::new(UniformWait {
-                    min: secs(1.0),
-                    max: secs(2.0),
-                    verbose,
-                    jitter,
-                }),
-                probability: 0.5,
-                verbose,
-            }),
-        ]
-    }
-
     #[test]
-    fn test_calculate_sleep_duration_with_jitter() {
-        let mut mock_gen = MockJitterGenerator { jitter: ms(1) };
-        let wait_condition = DurationWait {
-            duration: secs(1.0),
-            jitter: Some(ms(500)),
-            verbose: Verbose::Off,
-        };
-        let calculated = wait_condition.calculate_sleep_duration(&mut mock_gen);
-        assert_eq!(calculated, ms(1001));
-    }
-
-    #[test]
-    fn test_duration_to_next_alignment() {
-        let s = Duration::from_secs;
-        // Exactly on a boundary waits a full interval.
-        assert_eq!(duration_to_next_alignment(s(100), s(10)), s(10));
-        // Just past a boundary.
-        assert_eq!(duration_to_next_alignment(s(103), s(10)), s(7));
-        // Just before the next boundary.
-        assert_eq!(duration_to_next_alignment(s(109), s(10)), s(1));
-        // Zero interval.
-        assert_eq!(duration_to_next_alignment(s(100), s(0)), s(0));
-        // Larger interval.
-        assert_eq!(duration_to_next_alignment(s(65), s(60)), s(55));
-        // Sub-second precision is preserved.
-        assert_eq!(duration_to_next_alignment(ms(1_250), ms(500)), ms(250));
-    }
-
-    #[test]
-    fn test_jitter_generator_non_zero_max_jitter() {
-        let mut jitter_gen = RandomJitterGenerator::new(ThreadRng::default());
-        assert!(jitter_gen.generate(ms(100)) <= ms(100));
-    }
-
-    #[test]
-    fn test_jitter_generator_zero_max_jitter() {
-        let mut jitter_gen = RandomJitterGenerator::new(ThreadRng::default());
-        assert_eq!(jitter_gen.generate(Duration::ZERO), Duration::ZERO);
+    fn test_sampler_statistics() {
+        for (seed, (name, sampler, mean, sd, sd_tol)) in random_samplers().into_iter().enumerate() {
+            let wait = Wait::new(sampler);
+            let mut r = rng(seed as u64);
+            let xs: Vec<f64> = (0..SAMPLES)
+                .map(|_| wait.sample(&mut r).unwrap().duration.as_secs_f64())
+                .collect();
+            let m = xs.iter().sum::<f64>() / xs.len() as f64;
+            let v = xs.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (xs.len() - 1) as f64;
+            let mean_tol = if name == "log-normal" { 0.03 } else { 0.02 };
+            assert_close(&format!("{name} mean"), m, mean, mean_tol);
+            assert_close(&format!("{name} sd"), v.sqrt(), sd, sd_tol);
+        }
     }
 
     #[test]
     fn test_seeded_sampling_is_deterministic() {
-        for c in all_conditions() {
-            let a = c.sample(&mut StdRng::seed_from_u64(42)).unwrap();
-            let b = c.sample(&mut StdRng::seed_from_u64(42)).unwrap();
-            assert_eq!(a, b);
+        for sampler in all_samplers() {
+            let wait = Wait::new(sampler).with_jitter(ms(50)).with_probability(0.5);
+            let now = noon();
+            for seed in 0..20 {
+                let a = wait.sample_at(&mut rng(seed), &now).unwrap();
+                let b = wait.sample_at(&mut rng(seed), &now).unwrap();
+                assert_eq!(a, b, "{sampler:?}");
+            }
         }
     }
 
-    // P1-6: the duration handed to the sleeper is the one the condition
-    // samples, drawn once.
+    // P2-2: jitter and probability apply to every sampler.
     #[test]
-    fn test_wait_sleeps_exactly_the_sampled_duration() {
-        for (i, c) in all_conditions().iter().enumerate() {
-            for seed in 0..20 {
-                let expected = c.sample(&mut StdRng::seed_from_u64(seed)).unwrap();
-                let mut sleeper = RecordingSleeper::default();
-                c.wait_using(&mut StdRng::seed_from_u64(seed), &mut sleeper)
-                    .unwrap();
-                assert_eq!(
-                    sleeper.performed,
-                    vec![(expected, Verbose::Off)],
-                    "condition {i}, seed {seed}"
-                );
+    fn test_jitter_applies_to_every_sampler() {
+        let now = noon();
+        for sampler in all_samplers() {
+            let plain = Wait::new(sampler);
+            let jittered = plain.with_jitter(secs(1.0));
+            let mut saw_large_jitter = false;
+            for seed in 0..50 {
+                let base = plain.sample_at(&mut rng(seed), &now).unwrap().duration;
+                let total = jittered.sample_at(&mut rng(seed), &now).unwrap().duration;
+                // Jitter is drawn after the base, so the same seed gives the
+                // same base and the difference is the jitter alone.
+                let jitter = total - base;
+                assert!(jitter <= secs(1.0), "{sampler:?}: {jitter:?}");
+                saw_large_jitter |= jitter > ms(500);
+            }
+            assert!(saw_large_jitter, "{sampler:?}: jitter never exceeded 500ms");
+        }
+    }
+
+    #[test]
+    fn test_probability_gates_every_sampler() {
+        let now = noon();
+        for sampler in all_samplers() {
+            let never = Wait::new(sampler).with_probability(0.0);
+            let always = Wait::new(sampler).with_probability(1.0);
+            let ungated = Wait::new(sampler);
+            for seed in 0..50 {
+                let skipped = never.sample_at(&mut rng(seed), &now).unwrap();
+                assert_eq!(skipped.duration, Duration::ZERO, "{sampler:?}");
+                assert!(skipped.skipped.is_some(), "{sampler:?}");
+
+                let waited = always.sample_at(&mut rng(seed), &now).unwrap();
+                assert!(waited.skipped.is_none(), "{sampler:?}");
+                if matches!(
+                    sampler,
+                    Sampler::Fixed(_) | Sampler::Align(_) | Sampler::At(_)
+                ) {
+                    let expected = ungated.sample_at(&mut rng(seed), &now).unwrap();
+                    assert_eq!(waited.duration, expected.duration, "{sampler:?}");
+                }
             }
         }
     }
 
     #[test]
-    fn test_wait_passes_the_condition_verbose_setting() {
-        let c = DurationWait {
-            duration: ms(1),
-            verbose: Verbose::Every(ms(250)),
-            jitter: None,
-        };
-        let mut sleeper = RecordingSleeper::default();
-        c.wait_using(&mut StdRng::seed_from_u64(0), &mut sleeper)
-            .unwrap();
-        assert_eq!(sleeper.performed[0].1, Verbose::Every(ms(250)));
+    fn test_probability_rate() {
+        let wait = Wait::new(Sampler::Fixed(ms(100))).with_probability(0.3);
+        let mut r = rng(14);
+        let waited = (0..SAMPLES)
+            .filter(|_| wait.sample(&mut r).unwrap().skipped.is_none())
+            .count();
+        assert_close("gate rate", waited as f64 / SAMPLES as f64, 0.3, 0.03);
     }
 
     #[test]
-    fn test_normal_statistics() {
-        let c = NormalWait {
-            mean: secs(1.0),
-            std_dev: ms(100),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 1);
-        assert_close("normal mean", mean, 1.0, 0.02);
-        assert_close("normal sd", sd, 0.1, 0.02);
+    fn test_deterministic_samplers() {
+        let now = noon();
+        let draw = |s: Sampler| Wait::new(s).sample_at(&mut rng(0), &now).unwrap();
+        assert_eq!(draw(Sampler::Fixed(ms(250))), Sample::of(ms(250)));
+        assert_eq!(
+            draw(Sampler::At(NaiveTime::from_hms_opt(12, 0, 0).unwrap())),
+            Sample::of(secs(30.0))
+        );
+        let aligned = draw(Sampler::Align(secs(60.0))).duration;
+        assert!(aligned > Duration::ZERO && aligned <= secs(60.0));
     }
 
     #[test]
-    fn test_exponential_statistics() {
-        let c = ExponentialWait {
-            lambda: 2.0,
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 2);
-        assert_close("exponential mean", mean, 0.5, 0.02);
-        assert_close("exponential sd", sd, 0.5, 0.02);
-    }
-
-    #[test]
-    fn test_log_normal_statistics_use_real_mean_and_sd() {
-        let c = LogNormalWait {
-            mean: secs(1.0),
-            std_dev: ms(500),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 3);
-        assert_close("log-normal mean", mean, 1.0, 0.03);
-        assert_close("log-normal sd", sd, 0.5, 0.05);
-    }
-
-    #[test]
-    fn test_log_normal_rejects_invalid_parameters() {
-        let zero_mean = LogNormalWait {
-            mean: Duration::ZERO,
-            std_dev: ms(500),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        assert!(zero_mean.calculate_wait_duration().is_err());
-
-        let zero_sd = LogNormalWait {
-            mean: secs(1.0),
-            std_dev: Duration::ZERO,
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let d = zero_sd.calculate_wait_duration().unwrap();
-        assert!((d.as_secs_f64() - 1.0).abs() < 1e-9);
-
-        assert!(log_normal_from_mean_sd(1.0, -0.1).is_err());
-    }
-
-    #[test]
-    fn test_pareto_statistics() {
-        // Shape 6 keeps the variance finite and its estimate stable.
-        let (scale, shape) = (1.0, 6.0);
-        let c = ParetoWait {
-            scale: secs(scale),
-            shape,
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 4);
-        let expected_mean = shape * scale / (shape - 1.0);
-        let expected_sd = scale / (shape - 1.0) * (shape / (shape - 2.0)).sqrt();
-        assert_close("pareto mean", mean, expected_mean, 0.02);
-        assert_close("pareto sd", sd, expected_sd, 0.05);
-    }
-
-    #[test]
-    fn test_uniform_statistics() {
-        let c = UniformWait {
-            min: secs(1.0),
-            max: secs(3.0),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 5);
-        assert_close("uniform mean", mean, 2.0, 0.02);
-        assert_close("uniform sd", sd, 2.0 / 12f64.sqrt(), 0.02);
-    }
-
-    #[test]
-    fn test_triangular_statistics() {
-        let (a, b, m) = (1.0, 4.0, 2.0);
-        let c = TriangularWait {
-            min: secs(a),
-            max: secs(b),
-            mode: secs(m),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 6);
-        let expected_var = (a * a + b * b + m * m - a * b - a * m - b * m) / 18.0;
-        assert_close("triangular mean", mean, (a + b + m) / 3.0, 0.02);
-        assert_close("triangular sd", sd, expected_var.sqrt(), 0.02);
-    }
-
-    #[test]
-    fn test_gamma_statistics() {
-        let (shape, scale) = (2.0, 1.5);
-        let c = GammaWait {
-            shape,
-            scale: secs(scale),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let (mean, sd) = sample_stats(&c, 7);
-        assert_close("gamma mean", mean, shape * scale, 0.02);
-        assert_close("gamma sd", sd, shape.sqrt() * scale, 0.02);
-    }
-
-    #[test]
-    fn test_uniform_samples_stay_in_range() {
-        let c = UniformWait {
-            min: secs(1.0),
-            max: secs(2.0),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let mut rng = StdRng::seed_from_u64(8);
-        for _ in 0..1_000 {
-            let d = c.sample_with(&mut rng).unwrap();
-            assert!(d >= secs(1.0) && d <= secs(2.0));
+    fn test_range_samplers_stay_in_range() {
+        let cases = [
+            (
+                Sampler::Uniform {
+                    min: secs(1.0),
+                    max: secs(2.0),
+                },
+                secs(1.0),
+                secs(2.0),
+            ),
+            (
+                Sampler::Triangular {
+                    min: secs(1.0),
+                    max: secs(3.0),
+                    mode: secs(2.0),
+                },
+                secs(1.0),
+                secs(3.0),
+            ),
+            (
+                Sampler::Pareto {
+                    scale: secs(1.0),
+                    shape: 3.0,
+                },
+                secs(1.0),
+                Duration::MAX,
+            ),
+        ];
+        for (sampler, lo, hi) in cases {
+            let wait = Wait::new(sampler);
+            let mut r = rng(8);
+            for _ in 0..1_000 {
+                let d = wait.sample(&mut r).unwrap().duration;
+                assert!(d >= lo && d <= hi, "{sampler:?}: {d:?}");
+            }
         }
     }
 
+    // P1-6: the duration handed to the sleeper is the one sampled, drawn once.
     #[test]
-    fn test_triangular_samples_stay_in_range() {
-        let c = TriangularWait {
-            min: secs(1.0),
-            max: secs(3.0),
-            mode: secs(2.0),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let mut rng = StdRng::seed_from_u64(9);
-        for _ in 0..1_000 {
-            let d = c.sample_with(&mut rng).unwrap();
-            assert!(d >= secs(1.0) && d <= secs(3.0));
+    fn test_wait_sleeps_exactly_the_sampled_duration() {
+        for sampler in all_samplers() {
+            if matches!(sampler, Sampler::Align(_) | Sampler::At(_)) {
+                continue; // depend on the real clock between the two calls
+            }
+            let wait = Wait::new(sampler)
+                .with_jitter(ms(50))
+                .with_probability(0.5)
+                .with_verbose(Verbose::Every(ms(250)));
+            for seed in 0..20 {
+                let expected = wait.sample(&mut rng(seed)).unwrap();
+                let mut sleeper = RecordingSleeper::default();
+                wait.wait_using(&mut rng(seed), &mut sleeper).unwrap();
+                assert_eq!(
+                    sleeper.performed,
+                    vec![(expected, Verbose::Every(ms(250)))],
+                    "{sampler:?}, seed {seed}"
+                );
+            }
         }
     }
 
     // P1-5: negative samples become zero and are flagged as clamped.
     #[test]
     fn test_negative_samples_clamp_to_zero_and_are_flagged() {
-        let c = NormalWait {
+        let wait = Wait::new(Sampler::Normal {
             mean: Duration::ZERO,
             std_dev: secs(1.0),
-            verbose: Verbose::Off,
-            jitter: None,
-        };
-        let mut rng = StdRng::seed_from_u64(10);
-        let samples: Vec<Sample> = (0..1_000).map(|_| c.sample(&mut rng).unwrap()).collect();
+        });
+        let mut r = rng(10);
+        let samples: Vec<Sample> = (0..1_000).map(|_| wait.sample(&mut r).unwrap()).collect();
         let clamped = samples.iter().filter(|s| s.clamped).count();
         assert!(
             clamped > 300,
@@ -841,15 +836,14 @@ mod tests {
 
     #[test]
     fn test_clamped_sample_still_gets_jitter() {
-        let c = NormalWait {
+        let wait = Wait::new(Sampler::Normal {
             mean: Duration::ZERO,
             std_dev: secs(1.0),
-            verbose: Verbose::Off,
-            jitter: Some(secs(1.0)),
-        };
-        let mut rng = StdRng::seed_from_u64(11);
+        })
+        .with_jitter(secs(1.0));
+        let mut r = rng(11);
         let clamped: Vec<Sample> = (0..1_000)
-            .map(|_| c.sample(&mut rng).unwrap())
+            .map(|_| wait.sample(&mut r).unwrap())
             .filter(|s| s.clamped)
             .collect();
         assert!(!clamped.is_empty());
@@ -858,98 +852,319 @@ mod tests {
     }
 
     #[test]
-    fn test_positive_samples_are_not_flagged() {
+    fn test_secs_to_duration() {
         assert_eq!(secs_to_duration(1.5), (secs(1.5), false));
         assert_eq!(secs_to_duration(0.0), (Duration::ZERO, false));
         assert_eq!(secs_to_duration(-0.1), (Duration::ZERO, true));
         assert_eq!(secs_to_duration(f64::NAN), (Duration::ZERO, true));
+        assert_eq!(secs_to_duration(1e30), (Duration::MAX, false));
+        assert_eq!(secs_to_duration(f64::INFINITY), (Duration::MAX, false));
     }
 
-    fn gate(probability: f64, jitter: Option<Duration>) -> ProbabilityGate {
-        ProbabilityGate {
-            inner: Box::new(DurationWait {
-                duration: ms(100),
-                verbose: Verbose::Off,
-                jitter,
-            }),
-            probability,
-            verbose: Verbose::Off,
+    // Extreme parameters used to panic converting the sample to a Duration.
+    #[test]
+    fn test_extreme_samples_saturate_instead_of_panicking() {
+        let samplers = [
+            Sampler::Exponential { lambda: 1e-30 },
+            Sampler::Pareto {
+                scale: secs(1.0),
+                shape: 0.001,
+            },
+            Sampler::Gamma {
+                shape: 1e300,
+                scale: secs(1.0),
+            },
+        ];
+        for sampler in samplers {
+            let wait = Wait::new(sampler).with_jitter(secs(1.0));
+            let mut r = rng(15);
+            let draws: Vec<Duration> = (0..100)
+                .map(|_| wait.sample(&mut r).unwrap().duration)
+                .collect();
+            assert!(draws.iter().all(|d| *d >= secs(1.0)), "{sampler:?}");
+            assert!(
+                draws.contains(&Duration::MAX),
+                "{sampler:?}: no draw reached the cap"
+            );
+        }
+        let huge = Wait::new(Sampler::Fixed(Duration::MAX)).with_jitter(secs(1.0));
+        assert_eq!(huge.sample(&mut rng(0)).unwrap().duration, Duration::MAX);
+    }
+
+    #[test]
+    fn test_validate_rejects_bad_parameters() {
+        let bad = [
+            (Sampler::Exponential { lambda: 0.0 }, "<LAMBDA>"),
+            (Sampler::Exponential { lambda: f64::NAN }, "<LAMBDA>"),
+            (
+                Sampler::LogNormal {
+                    mean: Duration::ZERO,
+                    std_dev: secs(1.0),
+                },
+                "<MEAN>",
+            ),
+            (
+                Sampler::Pareto {
+                    scale: Duration::ZERO,
+                    shape: 1.0,
+                },
+                "<SCALE>",
+            ),
+            (
+                Sampler::Pareto {
+                    scale: secs(1.0),
+                    shape: -1.0,
+                },
+                "<SHAPE>",
+            ),
+            (
+                Sampler::Uniform {
+                    min: secs(2.0),
+                    max: secs(2.0),
+                },
+                "<MIN>",
+            ),
+            (
+                Sampler::Triangular {
+                    min: secs(1.0),
+                    max: secs(1.0),
+                    mode: secs(1.0),
+                },
+                "<MIN>",
+            ),
+            (
+                Sampler::Triangular {
+                    min: secs(1.0),
+                    max: secs(2.0),
+                    mode: secs(3.0),
+                },
+                "<MODE>",
+            ),
+            (
+                Sampler::Gamma {
+                    shape: 0.0,
+                    scale: secs(1.0),
+                },
+                "<SHAPE>",
+            ),
+            (
+                Sampler::Gamma {
+                    shape: 1.0,
+                    scale: Duration::ZERO,
+                },
+                "<SCALE>",
+            ),
+            (Sampler::Align(Duration::ZERO), "<INTERVAL>"),
+        ];
+        for (sampler, names) in bad {
+            let err = Wait::new(sampler).validate().unwrap_err().to_string();
+            assert!(err.contains(names), "{sampler:?}: {err}");
+            // Sampling refuses invalid parameters too.
+            assert!(Wait::new(sampler).sample(&mut rng(0)).is_err());
+        }
+
+        let err = Wait::new(Sampler::Fixed(secs(1.0)))
+            .with_probability(1.5)
+            .validate()
+            .unwrap_err();
+        assert!(err.to_string().contains("--probability"));
+        let err = Wait::new(Sampler::Fixed(secs(1.0)))
+            .with_verbose(Verbose::Every(Duration::from_micros(10)))
+            .validate()
+            .unwrap_err();
+        assert!(err.to_string().contains("--verbose"));
+
+        for sampler in all_samplers() {
+            assert!(Wait::new(sampler).validate().is_ok(), "{sampler:?}");
         }
     }
 
     #[test]
-    fn test_probability_gate_keeps_inner_jitter() {
-        let g = gate(1.0, Some(secs(3.0)));
-        let mut rng = StdRng::seed_from_u64(12);
-        let samples: Vec<Duration> = (0..200).map(|_| g.sample_with(&mut rng).unwrap()).collect();
-        assert!(samples.iter().all(|d| *d >= ms(100) && *d <= ms(3_100)));
-        assert!(
-            samples.iter().any(|d| *d > secs(1.0)),
-            "jitter was not applied through the gate"
+    fn test_log_normal_from_mean_sd_rejects_invalid_parameters() {
+        assert!(log_normal_from_mean_sd(0.0, 0.5).is_err());
+        assert!(log_normal_from_mean_sd(1.0, -0.1).is_err());
+        let zero_sd = Wait::new(Sampler::LogNormal {
+            mean: secs(1.0),
+            std_dev: Duration::ZERO,
+        });
+        let d = zero_sd.calculate().unwrap();
+        assert!((d.as_secs_f64() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_duration_to_next_alignment() {
+        let s = Duration::from_secs;
+        assert_eq!(duration_to_next_alignment(s(100), s(10)), s(10));
+        assert_eq!(duration_to_next_alignment(s(103), s(10)), s(7));
+        assert_eq!(duration_to_next_alignment(s(109), s(10)), s(1));
+        assert_eq!(duration_to_next_alignment(s(100), s(0)), s(0));
+        assert_eq!(duration_to_next_alignment(s(65), s(60)), s(55));
+        assert_eq!(duration_to_next_alignment(ms(1_250), ms(500)), ms(250));
+    }
+
+    #[test]
+    fn test_jitter_bounds() {
+        let mut r = rng(16);
+        assert_eq!(sample_jitter(&mut r, Duration::ZERO), Duration::ZERO);
+        for _ in 0..1_000 {
+            assert!(sample_jitter(&mut r, ms(100)) <= ms(100));
+        }
+        // Larger than u64 nanoseconds must not panic.
+        sample_jitter(&mut r, Duration::MAX);
+    }
+
+    fn hms(h: u32, m: u32, s: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, m, s).unwrap()
+    }
+
+    fn whole(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    #[test]
+    fn test_duration_until_later_today() {
+        let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
+        assert_eq!(duration_until(&now, hms(10, 1, 0)), Ok(whole(60)));
+    }
+
+    #[test]
+    fn test_duration_until_exactly_now_is_zero() {
+        let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
+        assert_eq!(duration_until(&now, hms(10, 0, 0)), Ok(Duration::ZERO));
+    }
+
+    #[test]
+    fn test_duration_until_past_rolls_to_tomorrow() {
+        let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
+        assert_eq!(
+            duration_until(&now, hms(9, 59, 0)),
+            Ok(whole(24 * 3600 - 60))
         );
     }
 
     #[test]
-    fn test_probability_gate_extremes() {
-        let mut rng = StdRng::seed_from_u64(13);
-        let never = gate(0.0, None);
-        let always = gate(1.0, None);
-        for _ in 0..1_000 {
-            let skipped = never.sample(&mut rng).unwrap();
-            assert_eq!(skipped.duration, Duration::ZERO);
-            assert!(skipped.skipped.is_some());
-
-            let waited = always.sample(&mut rng).unwrap();
-            assert_eq!(waited, Sample::of(ms(100)));
-        }
+    fn test_duration_until_across_midnight() {
+        let now = Utc.with_ymd_and_hms(2025, 6, 1, 23, 59, 58).unwrap();
+        assert_eq!(duration_until(&now, hms(0, 0, 3)), Ok(whole(5)));
     }
 
     #[test]
-    fn test_probability_gate_rate() {
-        let g = gate(0.3, None);
-        let mut rng = StdRng::seed_from_u64(14);
-        let waited = (0..SAMPLES)
-            .filter(|_| g.sample(&mut rng).unwrap().skipped.is_none())
-            .count();
-        assert_close("gate rate", waited as f64 / SAMPLES as f64, 0.3, 0.03);
+    fn test_duration_until_respects_fixed_offset() {
+        let tz = FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
+        let now = tz.with_ymd_and_hms(2025, 6, 1, 8, 0, 0).unwrap();
+        assert_eq!(duration_until(&now, hms(9, 30, 0)), Ok(whole(5400)));
     }
 
     #[test]
-    fn test_probability_gate_wraps_any_condition() {
-        let g = ProbabilityGate {
-            inner: Box::new(NormalWait {
-                mean: secs(5.0),
-                std_dev: Duration::ZERO,
-                verbose: Verbose::Off,
-                jitter: None,
+    fn test_duration_until_spring_forward_gap_does_not_panic() {
+        // 2025-03-09: New York clocks jump from 02:00 EST to 03:00 EDT.
+        let now = New_York.with_ymd_and_hms(2025, 3, 9, 0, 0, 0).unwrap();
+        // 02:30 does not exist; it resolves to 03:30 EDT (07:30 UTC), which
+        // is 2h30m after 00:00 EST (05:00 UTC).
+        assert_eq!(duration_until(&now, hms(2, 30, 0)), Ok(whole(9000)));
+    }
+
+    #[test]
+    fn test_duration_until_spring_forward_gap_already_past() {
+        // At 04:00 EDT the gap has passed, so 02:30 means tomorrow at 02:30 EDT.
+        let now = New_York.with_ymd_and_hms(2025, 3, 9, 4, 0, 0).unwrap();
+        assert_eq!(
+            duration_until(&now, hms(2, 30, 0)),
+            Ok(whole(22 * 3600 + 1800))
+        );
+    }
+
+    #[test]
+    fn test_duration_until_fall_back_uses_earliest() {
+        // 2025-11-02: New York clocks fall back from 02:00 EDT to 01:00 EST.
+        let now = New_York.with_ymd_and_hms(2025, 11, 2, 0, 0, 0).unwrap();
+        // 01:30 happens twice; the first is 01:30 EDT, 1h30m after 00:00 EDT.
+        assert_eq!(duration_until(&now, hms(1, 30, 0)), Ok(whole(5400)));
+    }
+
+    #[test]
+    fn test_duration_until_fall_back_uses_second_occurrence_when_first_passed() {
+        // 01:45 EDT (05:45 UTC): the first 01:30 has passed, the second
+        // (01:30 EST, 06:30 UTC) is 45 minutes away.
+        let now = New_York.from_utc_datetime(
+            &Utc.with_ymd_and_hms(2025, 11, 2, 5, 45, 0)
+                .unwrap()
+                .naive_utc(),
+        );
+        assert_eq!(duration_until(&now, hms(1, 30, 0)), Ok(whole(2700)));
+    }
+
+    // ConsoleSleeper output, driven by a fake clock.
+
+    #[test]
+    fn test_console_silent_wait_sleeps_once() {
+        let (out, slept) = console(Sample::of(secs(2.0)), Verbose::Off);
+        assert_eq!(out, "");
+        assert_eq!(slept, secs(2.0));
+    }
+
+    #[test]
+    fn test_console_fixed_period_output() {
+        let (out, slept) = console(Sample::of(secs(1.0)), Verbose::Every(ms(250)));
+        assert_eq!(slept, secs(1.0));
+        let lines: Vec<&str> = out.lines().map(|l| &l[11..]).collect();
+        assert_eq!(
+            lines,
+            [
+                "[DOZR] Time remaining: 1.0s",
+                "[DOZR] Time remaining: 0.8s",
+                "[DOZR] Time remaining: 0.5s",
+                "[DOZR] Time remaining: 0.2s",
+                "Wait complete.",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_console_whole_second_period_has_no_decimals() {
+        let (out, _) = console(Sample::of(secs(2.0)), Verbose::Every(secs(1.0)));
+        assert!(out.contains("Time remaining: 2s"), "{out}");
+        assert!(out.contains("Time remaining: 1s"), "{out}");
+    }
+
+    #[test]
+    fn test_console_adaptive_output() {
+        let (out, slept) = console(Sample::of(secs(3.0)), Verbose::Adaptive);
+        assert_eq!(slept, secs(3.0));
+        assert_eq!(out.matches("Time remaining").count(), 3, "{out}");
+        assert!(out.ends_with("Wait complete.\n"), "{out}");
+    }
+
+    #[test]
+    fn test_console_reports_clamp_only_when_verbose() {
+        let clamped = Sample {
+            duration: Duration::ZERO,
+            clamped: true,
+            skipped: None,
+        };
+        let (out, _) = console(clamped, Verbose::Adaptive);
+        assert!(out.contains("clamped to zero"), "{out}");
+        let (out, _) = console(clamped, Verbose::Off);
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn test_console_reports_skip_only_when_verbose() {
+        let skipped = Sample {
+            duration: Duration::ZERO,
+            clamped: false,
+            skipped: Some(Skip {
+                probability: 0.25,
+                roll: 0.5,
             }),
-            probability: 0.0,
-            verbose: Verbose::Off,
         };
-        let start = Instant::now();
-        g.wait().unwrap();
-        assert!(start.elapsed() < ms(500));
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_deprecated_probabilistic_wait_still_works() {
-        let always = ProbabilisticWait {
-            duration: ms(50),
-            probability: 1.0,
-            verbose: Verbose::Off,
-        };
-        let start = Instant::now();
-        always.wait().unwrap();
-        assert!(start.elapsed() >= ms(50));
-
-        let never = ProbabilisticWait {
-            duration: secs(5.0),
-            probability: 0.0,
-            verbose: Verbose::Off,
-        };
-        let start = Instant::now();
-        never.wait().unwrap();
-        assert!(start.elapsed() < ms(500));
+        let (out, slept) = console(skipped, Verbose::Every(secs(1.0)));
+        assert_eq!(
+            out,
+            "Probabilistic wait: Skipping sleep (probability: 0.25, roll: 0.50)\n"
+        );
+        assert_eq!(slept, Duration::ZERO);
+        let (out, _) = console(skipped, Verbose::Off);
+        assert_eq!(out, "");
     }
 }

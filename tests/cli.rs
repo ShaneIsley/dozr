@@ -561,3 +561,50 @@ fn test_clamp_note_is_silent_without_verbose() {
         assert!(output.stderr.is_empty(), "{output:?}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// P2-2: extreme samples saturate instead of panicking; jitter applies to
+// every command, including align and at
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extreme_parameters_do_not_crash() {
+    // These used to panic within milliseconds converting an enormous sample
+    // to a Duration. Now they wait (effectively forever), so check the
+    // process is still alive after a moment, then stop it.
+    for args in [
+        &["e", "1e-30"][..],
+        &["par", "1s", "0.001"],
+        &["g", "1e300", "1s"],
+    ] {
+        let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("dozr"))
+            .args(args)
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let status = child.try_wait().unwrap();
+        child.kill().ok();
+        child.wait().ok();
+        assert!(status.is_none(), "{args:?} exited early with {status:?}");
+    }
+}
+
+#[test]
+fn test_jitter_applies_to_align() {
+    // `a 10ms` alone never waits more than 10ms. With up to 300ms of
+    // jitter, the chance that seven runs all stay under 110ms is (1/3)^7,
+    // about 0.05%.
+    let longest = (0..7)
+        .map(|_| {
+            let (elapsed, output) = timed(&["a", "10ms", "-j", "300ms"]);
+            assert!(output.status.success());
+            elapsed
+        })
+        .max()
+        .unwrap();
+    assert!(
+        longest > Duration::from_millis(110),
+        "longest run was {longest:?}; jitter appears to be ignored for align"
+    );
+}

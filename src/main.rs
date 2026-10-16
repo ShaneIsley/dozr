@@ -1,6 +1,13 @@
-use anyhow::Result;
-use dozr::run;
+use std::process::ExitCode;
 
-fn main() -> Result<()> {
-    run()
+fn main() -> ExitCode {
+    match dozr::run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            // `{:#}` prints the cause chain on one line, without the
+            // backtrace that `Debug` would add when RUST_BACKTRACE is set.
+            eprintln!("error: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
 }

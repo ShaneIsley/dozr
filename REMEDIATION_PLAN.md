@@ -17,7 +17,8 @@ commands are included so each fix can be checked the same way.
 | T-4 | Done | Format, Clippy, test, and docs gates, plus a build on Rust 1.85. |
 | P0-1 to P0-6 | Done | Deviations from the original wording are noted under each item. |
 | P1-1 to P1-6 | Done | P1-5 and P1-6 share one mechanism: `WaitCondition::sample` returns a `Sample` with clamped and skipped details, and every wait goes through a replaceable `Sleeper`. That is the sleep injection from P2-1, done early because both items need it. |
-| P2, P3 | Not started | |
+| P2-1 to P2-5 | Done | Notes under each item. P2-2 also fixed a panic on extreme parameters, found while planning it. |
+| P3 | Not started | |
 
 ## Priorities
 
@@ -357,6 +358,10 @@ Described under T-1 and T-2. Add a third injection point: the sleep function
 used by `perform_wait`, so tests can record the requested duration instead of
 actually sleeping. This is what makes the P0 and P1 tests fast.
 
+(Done in two layers. A `Sleeper` receives each sample, and `ConsoleSleeper`
+takes any writer and any `Clock`. The progress loops take a `Clock` too, so a
+`FakeClock` runs a 25-minute adaptive schedule in milliseconds.)
+
 ### P2-2. Replace eight copy-pasted structs with one composed `Wait`
 
 `src/conditions.rs` has eight structs whose `calculate_wait_duration` bodies
@@ -380,6 +385,16 @@ for every variant. This fixes P0-2, P0-3, and P1-6 structurally rather than
 case by case. Keep the `WaitCondition` trait only if an external user needs
 it; otherwise remove it and the `Box<dyn>`.
 
+(Done. The trait is removed: the crate is pre-1.0 and 0.5.0 already breaks
+the library API. `At` holds a `NaiveTime` resolved when sampled, so
+`Wait::sample_at` can take the current time as an argument. The probability
+gate is rolled before the sampler is drawn, so a skipped wait draws nothing
+else. Jitter now applies to `align` and `at` as well, which the plan's "for
+every variant" implies and which makes `dozr a 1m -j 30s` useful for
+staggering machines. Validation moved into `Wait::validate`, shared by the
+CLI and library users. While doing this, a panic on extreme parameters was
+found and fixed: samples too large for a `Duration` now saturate.)
+
 Tests:
 
 - Unit: a table-driven test over every `Sampler` variant asserting jitter is
@@ -393,6 +408,11 @@ Tests:
 `cargo install dozr` currently installs two binaries. Move
 `src/bin/dist_sampler.rs` to `examples/dist_sampler.rs`, or keep it as a
 binary behind `required-features = ["tools"]`.
+
+(Done as an example. It now parses the same command and options as `dozr`,
+so its samples cannot drift from what `dozr` waits. The five
+`scripts/sampling/*.sh` scripts called it 1,000 times each with the old
+flags. They are replaced by `scripts/sample_stats.sh`.)
 
 Tests:
 
@@ -424,6 +444,11 @@ Tests: enforced by T-4 CI gates.
 Tests: a `scripts/check_examples.sh` CI step that extracts every fenced
 `bash` block from `README.md` and `examples.md` and runs it with `--help`
 appended, proving each documented command parses.
+
+(Done with `-p 0` instead of `--help`. `--help` stops parsing as soon as it
+is seen, so cross-argument rules never run. `-p 0` runs full validation and
+then skips the wait. The script also checks inline commands in Markdown
+tables. `scripts/run_examples.sh` was deleted rather than rewritten.)
 
 ## P3: capabilities scripts need
 

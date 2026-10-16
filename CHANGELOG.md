@@ -17,6 +17,15 @@ Planned as 0.5.0. This release breaks the command line and the library API.
 - **Breaking (library):** the `WaitCondition` trait now has two required methods, `sample` and `verbose`. `sample` returns a `Sample` that records the duration and whether it was clamped or skipped. `wait` draws exactly one sample and hands it to a `Sleeper`. Use `wait_using` to substitute a sleeper in tests.
 - **Breaking (library):** `verbose` fields are now the `Verbose` enum (`Off`, `Adaptive`, `Every(period)`) instead of `Option<Duration>` with a `1ns` sentinel. Time-valued fields such as `NormalWait::std_dev`, `ParetoWait::scale`, `GammaWait::scale`, and the `TriangularWait` bounds are now `Duration`.
 - `verbose_wait` calls its display function on every tick with the exact remaining time.
+- `-j` / `--jitter` now applies to `align` and `at` too, ending the wait up to the jitter after the boundary or clock time. It used to be silently ignored for those commands. `dozr a 1m -j 30s` spreads machines over the first 30 seconds of each minute.
+- **Breaking (library):** the eight `*Wait` structs, `ProbabilisticWait`, `ProbabilityGate`, and the `WaitCondition` trait are replaced by one `Wait` struct holding a `Sampler` enum, plus `jitter`, `probability`, and `verbose`. Build one with `Wait::new(sampler).with_jitter(..).with_probability(..)`, check it with `Wait::validate`, and run it with `Wait::wait`. Every parameter rule now lives in the library, so library users get the same validation as the command line.
+- **Breaking (library):** `ThreadSleeper` is now `ConsoleSleeper`, which writes to any writer and sleeps on any `Clock`. `verbose_wait_with` and `adaptive_verbose_wait_with` take a `Clock` so progress loops can run on simulated time.
+- Runtime errors print as a single `error: ...` line with exit status 1, without a Rust backtrace.
+- `dist_sampler` is now an example rather than an installed binary, so `cargo install dozr` installs only `dozr`. It takes the same command and options as `dozr`, plus `--count` and `--seed`: `cargo run --example dist_sampler -- --count 1000 n 1s 100ms`.
+
+### Fixed
+- Extreme parameters such as `dozr e 1e-30`, `dozr par 1s 0.001`, or `dozr g 1e300 1s` no longer panic. Samples too large to represent now wait for the maximum possible duration.
+- Adding jitter to a duration near the maximum no longer overflows.
 
 ### Added
 - With `-v`, `dozr` reports when a sampled duration was negative and was clamped to zero.
@@ -25,6 +34,14 @@ Planned as 0.5.0. This release breaks the command line and the library API.
 
 ### Removed
 - `Cli::is_adaptive_verbose` and `Cli::verbose_period`. Match on `Verbose` instead.
+- `JitterGenerator` and `RandomJitterGenerator`. Pass a seeded random number generator to `Wait::sample` for repeatable jitter.
+- The unused `mockall` dev-dependency.
+- `scripts/run_examples.sh`, which used pre-0.4 syntax, and the per-distribution `scripts/sampling/*.sh`. Use `scripts/check_examples.sh` and `scripts/sample_stats.sh` instead.
+
+### Testing
+- Progress loops run on a simulated clock in unit tests, so the full adaptive schedule of a 25-minute wait is checked in milliseconds.
+- `scripts/check_examples.sh` checks that every command in the README and `examples.md` parses and validates, and CI runs it.
+- CI checks that `cargo install` installs only the `dozr` binary.
 
 ## [0.4.2] - Not yet released
 

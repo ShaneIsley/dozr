@@ -125,9 +125,9 @@ If an `at` time falls in a daylight-saving gap, `dozr` waits until the same cloc
 
 | Full Option | Short | Value | Description |
 | :--- | :--- | :--- | :--- |
-| `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>`. Not applicable to `align` or `at`. |
+| `--jitter` | `-j` | `<TIME>` | Adds a random amount of time up to `<TIME>` to any command. With `align` or `at`, the wait ends up to `<TIME>` after the boundary or clock time. |
 | `--probability`| `-p` | `<FLOAT>` | The chance (0.0 to 1.0) that the wait will actually occur. Applies to every command and keeps any jitter. |
-| `--verbose` | `-v` | `[TIME]` | Prints progress to stderr. Without a value, updates are adaptive. With a period of at least `1ms`, such as `-v 250ms`, an update is printed every period. Put a bare `-v` after the command, because `dozr -v d 5s` would read `d` as the period. |
+| `--verbose` | `-v` | `[TIME]` | Prints progress to stderr. Without a value, updates are adaptive. With a period of at least `1ms`, such as `-v 250ms`, an update is printed every period. Put a bare `-v` after the command. Before the command, it reads the command name as its period. |
 | `--help` | `-h` | *(none)* | Displays the help message for the command. |
 | `--version` | `-V` | *(none)* | Displays the application version. |
 
