@@ -19,6 +19,7 @@ commands are included so each fix can be checked the same way.
 | P1-1 to P1-6 | Done | P1-5 and P1-6 share one mechanism: `WaitCondition::sample` returns a `Sample` with clamped and skipped details, and every wait goes through a replaceable `Sleeper`. That is the sleep injection from P2-1, done early because both items need it. |
 | P2-1 to P2-5 | Done | Notes under each item. P2-2 also fixed a panic on extreme parameters, found while planning it. |
 | P3-1 to P3-4 | Done | Notes under each item. |
+| Release | 0.5.0 | The planned 0.4.2 was not released separately; its fixes ship in 0.5.0. |
 
 ## Priorities
 
