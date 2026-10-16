@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as 0.5.1. These defects were found by a post-release review of
-0.5.0; see `REMEDIATION_PLAN.md`.
+## [0.5.1] - 2026-10-16
+
+These defects were found by a post-release review of 0.5.0; see
+`REMEDIATION_PLAN.md`.
 
 ### Fixed
 - `at` no longer waits for the second occurrence of a time that happens twice on the night the clocks go back. It picked the later one, so a time a minute away could wait an hour longer.
@@ -142,7 +144,8 @@ This release fixes several cases where `dozr` silently did something other than 
 - Adaptive ETA display with human-readable formatting
 - Support for duration units: seconds, minutes, hours, days, milliseconds
 
-[Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ShaneIsley/dozr/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/ShaneIsley/dozr/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ShaneIsley/dozr/compare/92e11a2...v0.5.0
 [0.4.1]: https://github.com/ShaneIsley/dozr/compare/5004a24...92e11a2
 [0.4.0]: https://github.com/ShaneIsley/dozr/compare/ccaf43f...5004a24
