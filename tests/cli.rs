@@ -403,6 +403,8 @@ fn test_invalid_parameters_exit_2_and_name_the_argument() {
         (&["t", "0s", "1s", "2s"], "<MODE>"),
         (&["t", "1s", "1s", "1s"], "<MIN>"),
         (&["a", "0s"], "<INTERVAL>"),
+        (&["a", "1ns"], "<INTERVAL>"),
+        (&["a", "999us"], "<INTERVAL>"),
         (&["d", "1s", "-v", "1ns"], "--verbose"),
         (&["d", "1s", "-v", "0s"], "--verbose"),
     ];
@@ -428,6 +430,7 @@ fn test_boundary_parameters_are_accepted() {
         &["t", "0s", "10ms", "0s"],
         &["t", "0s", "10ms", "10ms"],
         &["d", "10ms", "-v", "1ms"],
+        &["a", "1ms"],
     ];
     for args in cases {
         dozr().args(*args).assert().success();

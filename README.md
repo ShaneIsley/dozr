@@ -140,6 +140,20 @@ If an `at` time falls in a daylight-saving gap, `dozr` waits until the same cloc
 | `--help` | `-h` | *(none)* | Displays the help message for the command. |
 | `--version` | `-V` | *(none)* | Displays the application version. |
 
+## Precision
+
+Every wait is a minimum: `dozr` never returns early. It makes one sleep call for the whole duration, so long waits do not drift. Each run also pays a fixed overhead, measured on a Linux cloud container:
+
+| Cost | Typical time |
+| :--- | :--- |
+| Starting any process, including coreutils `sleep` | About 1.5 ms |
+| `dozr`'s own start-up, mostly argument parsing | About 0.4 ms |
+| The operating system waking the process late | About 0.1 ms |
+
+`dozr d 1ms` therefore takes about 3 ms from the shell, and `dozr d 100ms` about 102 ms. Durations shorter than a millisecond are accepted, as they are by `sleep`, but they behave like `0s`. For many very short waits in a loop, sleep inside your own program instead of starting a process each time.
+
+`align` intervals must be at least `1ms`, because a shorter boundary could not be observed from outside `dozr`.
+
 ## License
 
 `dozr` is licensed under the [MIT License](https://github.com/ShaneIsley/dozr/blob/main/LICENSE).

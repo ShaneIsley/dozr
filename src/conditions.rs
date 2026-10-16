@@ -35,6 +35,12 @@ use rand_distr::{Distribution, Exp, Gamma, LogNormal, Normal, Pareto, Triangular
 use std::io::Write;
 use std::time::Duration;
 
+/// Shortest interval accepted for [`Sampler::Align`].
+///
+/// Starting a process takes longer than this, so a shorter boundary could not
+/// be observed from outside `dozr`.
+pub const MIN_ALIGN_INTERVAL: Duration = Duration::from_millis(1);
+
 /// Picks the base duration of a wait.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Sampler {
@@ -115,9 +121,11 @@ impl Sampler {
                 bail!("gamma <SCALE> must be greater than 0")
             }
             Sampler::Gamma { .. } => Ok(()),
-            Sampler::Align(interval) if interval.is_zero() => {
-                bail!("align <INTERVAL> must be greater than 0")
-            }
+            Sampler::Align(interval) if interval < MIN_ALIGN_INTERVAL => bail!(
+                "align <INTERVAL> must be at least {}, got {}",
+                fmt(MIN_ALIGN_INTERVAL),
+                fmt(interval)
+            ),
             Sampler::Align(_) => Ok(()),
         }
     }
@@ -1063,6 +1071,8 @@ mod tests {
                 "<SCALE>",
             ),
             (Sampler::Align(Duration::ZERO), "<INTERVAL>"),
+            (Sampler::Align(Duration::from_nanos(1)), "<INTERVAL>"),
+            (Sampler::Align(Duration::from_micros(999)), "<INTERVAL>"),
         ];
         for (sampler, names) in bad {
             let err = Wait::new(sampler).validate().unwrap_err().to_string();
@@ -1085,6 +1095,11 @@ mod tests {
         for sampler in all_samplers() {
             assert!(Wait::new(sampler).validate().is_ok(), "{sampler:?}");
         }
+        assert!(
+            Wait::new(Sampler::Align(MIN_ALIGN_INTERVAL))
+                .validate()
+                .is_ok()
+        );
     }
 
     #[test]

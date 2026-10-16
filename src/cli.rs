@@ -1,6 +1,6 @@
 //! Command-line parsing for `dozr`.
 
-use crate::conditions::{Sampler, Wait};
+use crate::conditions::{MIN_ALIGN_INTERVAL, Sampler, Wait};
 use crate::{MIN_VERBOSE_PERIOD, Verbose};
 use chrono::NaiveTime;
 use clap::{Parser, Subcommand};
@@ -67,6 +67,18 @@ fn parse_verbose(s: &str) -> Result<Verbose, String> {
                 Ok(Verbose::Every(period))
             }
         }
+    }
+}
+
+fn parse_align_interval(s: &str) -> Result<Duration, String> {
+    let d = parse_time(s)?;
+    if d < MIN_ALIGN_INTERVAL {
+        Err(format!(
+            "must be at least {}",
+            humantime::format_duration(MIN_ALIGN_INTERVAL)
+        ))
+    } else {
+        Ok(d)
     }
 }
 
@@ -231,8 +243,8 @@ pub enum Commands {
     /// Align the wait to the next even interval
     #[command(aliases = &["a", "ali"])]
     Align {
-        /// The interval to align to (e.g., "1m", "30s"). Must be greater than 0.
-        #[arg(value_parser = parse_positive_duration)]
+        /// The interval to align to (e.g., "1m", "30s"). Must be at least 1ms.
+        #[arg(value_parser = parse_align_interval)]
         interval: Duration,
     },
     /// Wait until a specific time of day
@@ -325,6 +337,9 @@ mod tests {
         );
         assert!(parse_time("2").unwrap_err().contains("a unit is required"));
         assert_eq!(parse_positive_duration("1ms"), Ok(Duration::from_millis(1)));
+        assert_eq!(parse_align_interval("1ms"), Ok(Duration::from_millis(1)));
+        assert!(parse_align_interval("999us").is_err());
+        assert!(parse_align_interval("1ns").is_err());
     }
 
     #[test]

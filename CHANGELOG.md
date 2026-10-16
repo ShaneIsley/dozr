@@ -37,6 +37,9 @@ Planned as 0.5.0. This release breaks the command line and the library API.
 - Help text gives the unit of every argument and notes that negative `normal` samples wait for zero.
 - A bare number where a length of time is expected, including `-j` and `-v`, gets an error suggesting a unit, such as `a unit is required, for example 0.1s or 0.1ms`.
 
+- **Breaking:** `align` intervals must be at least `1ms`. Starting a process takes longer than that, so `dozr a 1ns` was accepted but meaningless.
+- The README has a Precision section: every wait is a minimum, and each run has about 2 ms of fixed overhead, mostly starting the process.
+
 ### Removed
 - `Cli::is_adaptive_verbose` and `Cli::verbose_period`. Match on `Verbose` instead.
 - `JitterGenerator` and `RandomJitterGenerator`. Pass a seeded random number generator to `Wait::sample` for repeatable jitter.
