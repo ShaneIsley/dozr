@@ -62,7 +62,7 @@ dozr d 1m -v 5s
 
 ### Time Alignment
 
-Align execution to the next even time interval. Use this to synchronize tasks to specific points in time (e.g., on the hour, every 15 minutes).
+Wait until the next boundary of an interval. Boundaries are measured from local midnight, so `1h` means on the hour, `15m` means every quarter hour, and `1d` means local midnight. Use this to synchronize tasks to specific points in time.
 
 Wait until the next even 5-second mark:
 

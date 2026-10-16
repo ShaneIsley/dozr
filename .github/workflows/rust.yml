@@ -30,6 +30,12 @@ jobs:
         RUSTDOCFLAGS: -D warnings
     - name: Documented commands parse
       run: scripts/check_examples.sh
+    - name: Documented-command check catches broken commands
+      run: |
+        if scripts/check_examples.sh scripts/testdata/broken.md > out.txt 2>&1; then
+          cat out.txt; echo "expected the check to fail"; exit 1
+        fi
+        grep -q "7 failed" out.txt || { cat out.txt; exit 1; }
     - name: Install puts only the dozr binary on PATH
       run: |
         cargo install --path . --locked --root "$RUNNER_TEMP/dozr-install"

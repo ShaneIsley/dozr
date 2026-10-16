@@ -28,7 +28,8 @@ use crate::progress::{
 };
 use anyhow::{Result, bail};
 use chrono::{
-    DateTime, Duration as ChronoDuration, Local, LocalResult, NaiveTime, Offset, TimeZone,
+    DateTime, Duration as ChronoDuration, Local, LocalResult, NaiveDateTime, NaiveTime, Offset,
+    TimeZone, Timelike,
 };
 use rand::{Rng, RngCore};
 use rand_distr::{Distribution, Exp, Gamma, LogNormal, Normal, Pareto, Triangular, Uniform};
@@ -64,7 +65,8 @@ pub enum Sampler {
     },
     /// Gamma distribution; the mean wait is `shape` times `scale`.
     Gamma { shape: f64, scale: Duration },
-    /// Until the next multiple of the interval since the Unix epoch.
+    /// Until the next boundary, where boundaries are local midnight plus
+    /// whole multiples of the interval.
     Align(Duration),
     /// Until the next occurrence of a local wall-clock time.
     At(NaiveTime),
@@ -96,7 +98,9 @@ impl Sampler {
                 bail!("pareto <SCALE> must be greater than 0")
             }
             Sampler::Pareto { shape, .. } => require_positive("pareto <SHAPE>", shape),
-            Sampler::Uniform { min, max } if min >= max => bail!(
+            // Compared as seconds, which is what the distribution sees; two
+            // durations a nanosecond apart at a billion seconds are equal there.
+            Sampler::Uniform { min, max } if min.as_secs_f64() >= max.as_secs_f64() => bail!(
                 "uniform <MIN> must be less than <MAX>, got {} and {}",
                 fmt(min),
                 fmt(max)
@@ -136,11 +140,9 @@ impl Sampler {
         let secs = match *self {
             Sampler::Fixed(d) => return Ok((d, false)),
             Sampler::Align(interval) => {
-                let since_epoch = now
-                    .signed_duration_since(DateTime::UNIX_EPOCH)
-                    .to_std()
-                    .unwrap_or_default();
-                return Ok((duration_to_next_alignment(since_epoch, interval), false));
+                return duration_to_next_local_alignment(now, interval)
+                    .map(|d| (d, false))
+                    .map_err(anyhow::Error::msg);
             }
             Sampler::At(time) => {
                 return duration_until(now, time)
@@ -238,14 +240,84 @@ pub fn duration_to_next_alignment(since_epoch: Duration, interval: Duration) -> 
     if remainder == 0 {
         interval
     } else {
-        Duration::from_nanos((interval_nanos - remainder) as u64)
+        // Built from u128 arithmetic so intervals beyond 584 years, the u64
+        // nanosecond limit, do not wrap.
+        let wait = interval_nanos - remainder;
+        Duration::new((wait / 1_000_000_000) as u64, (wait % 1_000_000_000) as u32)
+    }
+}
+
+/// Time from `now` until the next alignment boundary in `now`'s time zone.
+///
+/// Boundaries are local midnight plus whole multiples of `interval`, so `1h`
+/// lands on the hour in every zone and `1d` lands on local midnight. Exactly
+/// on a boundary, a full `interval` is returned. Around a daylight-saving
+/// change the wall clock jumps, so the wait to the next boundary can be up to
+/// the size of the jump shorter or longer than usual. A zero interval returns
+/// zero.
+pub fn duration_to_next_local_alignment<Tz: TimeZone>(
+    now: &DateTime<Tz>,
+    interval: Duration,
+) -> std::result::Result<Duration, String> {
+    if interval.is_zero() {
+        return Ok(Duration::ZERO);
+    }
+    let local = now.naive_local();
+    let midnight = local
+        .date()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is a valid time");
+    let since_midnight = (local - midnight).to_std().unwrap_or_default();
+    let to_boundary = duration_to_next_alignment(since_midnight, interval);
+    let target = local + ChronoDuration::from_std(to_boundary).map_err(|e| e.to_string())?;
+    let target_dt = resolve_local(now, target)
+        .ok_or_else(|| format!("could not resolve the boundary at {target} to a future time"))?;
+    target_dt
+        .signed_duration_since(now.clone())
+        .to_std()
+        .map_err(|e| e.to_string())
+}
+
+/// The first instant at or after `now` whose wall-clock time in `now`'s zone
+/// is `naive`, or `None` when every such instant has passed.
+///
+/// - A wall time inside a daylight-saving gap is moved forward by the length
+///   of the gap, so 02:30 on a spring-forward night becomes 03:30.
+/// - A wall time that occurs twice (fall back) uses the earlier occurrence,
+///   or the later one once the earlier has passed.
+fn resolve_local<Tz: TimeZone>(now: &DateTime<Tz>, naive: NaiveDateTime) -> Option<DateTime<Tz>> {
+    let tz = now.timezone();
+    match tz.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => (dt >= *now).then_some(dt),
+        LocalResult::Ambiguous(a, b) => {
+            // `chrono::Local` orders the pair by UTC offset, which for a
+            // fall-back puts the later instant first; `chrono-tz` orders it
+            // by instant. Sort so neither convention matters.
+            let (earlier, later) = if a <= b { (a, b) } else { (b, a) };
+            if earlier >= *now {
+                Some(earlier)
+            } else if later >= *now {
+                Some(later)
+            } else {
+                None
+            }
+        }
+        LocalResult::None => {
+            // Interpret the wall time using the offset in force before the
+            // gap, which lands just after it.
+            let before = tz.offset_from_utc_datetime(&(naive - ChronoDuration::days(1)));
+            let utc = naive - ChronoDuration::seconds(i64::from(before.fix().local_minus_utc()));
+            let dt = tz.from_utc_datetime(&utc);
+            (dt >= *now).then_some(dt)
+        }
     }
 }
 
 /// Time from `now` until the next occurrence of the wall-clock time `target`
 /// in `now`'s time zone.
 ///
-/// - A target equal to `now` returns zero; an earlier target rolls to tomorrow.
+/// - The comparison is made at whole-second granularity, so a target in the
+///   current second returns zero; an earlier target rolls to tomorrow.
 /// - A target inside a daylight-saving gap (a local time that does not exist)
 ///   is moved forward by the length of the gap, so 02:30 on a spring-forward
 ///   night becomes 03:30.
@@ -255,40 +327,18 @@ pub fn duration_until<Tz: TimeZone>(
     now: &DateTime<Tz>,
     target: NaiveTime,
 ) -> std::result::Result<Duration, String> {
-    let tz = now.timezone();
+    let now_second = now.with_nanosecond(0).unwrap_or_else(|| now.clone());
     let mut date = now.date_naive();
 
     // Two days is always enough: today, or failing that tomorrow. The third
     // iteration only guards against a zone that skips an entire day.
     for _ in 0..3 {
-        let naive = date.and_time(target);
-        let candidate = match tz.from_local_datetime(&naive) {
-            LocalResult::Single(dt) => (dt >= *now).then_some(dt),
-            LocalResult::Ambiguous(earliest, latest) => {
-                if earliest >= *now {
-                    Some(earliest)
-                } else if latest >= *now {
-                    Some(latest)
-                } else {
-                    None
-                }
-            }
-            LocalResult::None => {
-                // Interpret the wall time using the offset in force before the
-                // gap, which lands just after it.
-                let before = tz.offset_from_utc_datetime(&(naive - ChronoDuration::days(1)));
-                let utc =
-                    naive - ChronoDuration::seconds(i64::from(before.fix().local_minus_utc()));
-                let dt = tz.from_utc_datetime(&utc);
-                (dt >= *now).then_some(dt)
-            }
-        };
-
-        if let Some(target_dt) = candidate {
-            return target_dt
+        if let Some(target_dt) = resolve_local(&now_second, date.and_time(target)) {
+            // Negative only within the current second, which counts as now.
+            return Ok(target_dt
                 .signed_duration_since(now.clone())
                 .to_std()
-                .map_err(|e| e.to_string());
+                .unwrap_or(Duration::ZERO));
         }
         date = date
             .succ_opt()
@@ -335,13 +385,16 @@ pub enum Adjustment {
 /// Details of a skipped probabilistic wait.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Skip {
+    /// The chance of waiting that was configured.
     pub probability: f64,
+    /// The random draw in `[0, 1)` that was compared against it.
     pub roll: f64,
 }
 
 /// A complete wait: a sampler plus jitter, probability, and progress settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Wait {
+    /// Picks the base duration.
     pub sampler: Sampler,
     /// Up to this much uniform random time is added to every sample.
     pub jitter: Option<Duration>,
@@ -351,6 +404,7 @@ pub struct Wait {
     pub min: Option<Duration>,
     /// Longest wait, applied after jitter.
     pub max: Option<Duration>,
+    /// How progress is reported while waiting.
     pub verbose: Verbose,
 }
 
@@ -367,26 +421,31 @@ impl Wait {
         }
     }
 
+    /// Never waits less than `min`, applied after jitter.
     pub fn with_min(mut self, min: Duration) -> Self {
         self.min = Some(min);
         self
     }
 
+    /// Never waits more than `max`, applied after jitter.
     pub fn with_max(mut self, max: Duration) -> Self {
         self.max = Some(max);
         self
     }
 
+    /// Adds up to `max_jitter` of uniform random time to every sample.
     pub fn with_jitter(mut self, max_jitter: Duration) -> Self {
         self.jitter = Some(max_jitter);
         self
     }
 
+    /// Waits only with this chance, from 0.0 (never) to 1.0 (always).
     pub fn with_probability(mut self, probability: f64) -> Self {
         self.probability = Some(probability);
         self
     }
 
+    /// Sets how progress is reported while waiting.
     pub fn with_verbose(mut self, verbose: Verbose) -> Self {
         self.verbose = verbose;
         self
@@ -487,7 +546,9 @@ pub trait Sleeper {
 /// A [`Sleeper`] that writes timestamped progress lines to `out` and sleeps
 /// on `clock`.
 pub struct ConsoleSleeper<W: Write, C: Clock> {
+    /// Where progress lines are written.
     pub out: W,
+    /// What the wait sleeps on.
     pub clock: C,
 }
 
@@ -503,6 +564,14 @@ impl ConsoleSleeper<std::io::Stderr, SystemClock> {
 
 fn stamp() -> impl std::fmt::Display {
     Local::now().format("%H:%M:%S")
+}
+
+/// Formats a remaining time rounded *up* to `decimals` places, so a countdown
+/// never reads "0s" while time remains.
+fn fmt_remaining(remaining: Duration, decimals: usize) -> String {
+    let scale = 10f64.powi(decimals as i32);
+    let value = (remaining.as_secs_f64() * scale).ceil() / scale;
+    format!("{value:.*}s", decimals)
 }
 
 /// Writes the one-off notes about a sample (skipped, clamped, or adjusted)
@@ -565,10 +634,9 @@ impl<W: Write, C: Clock> Sleeper for ConsoleSleeper<W, C> {
             } else {
                 writeln!(
                     out,
-                    "[{}] [DOZR] Time remaining: {:.*}s",
+                    "[{}] [DOZR] Time remaining: {}",
                     stamp(),
-                    decimals,
-                    remaining.as_secs_f64()
+                    fmt_remaining(remaining, decimals)
                 )
             };
         };
@@ -597,7 +665,9 @@ impl<W: Write, C: Clock> Sleeper for ConsoleSleeper<W, C> {
 /// `dozr d` accepts back. A skipped wait prints `0s`. Notes about the sample
 /// go to `notes` when verbose output is on; there is no countdown.
 pub struct DryRunSleeper<W: Write, N: Write> {
+    /// Where the chosen duration is written.
     pub out: W,
+    /// Where notes about the sample are written when verbose output is on.
     pub notes: N,
 }
 
@@ -1157,6 +1227,148 @@ mod tests {
     }
 
     #[test]
+    fn test_duration_until_current_second_counts_as_now() {
+        // 10:00:00.9: the target 10:00:00 is in the current second, so it is
+        // now, not tomorrow; 10:00:01 is 100 ms away.
+        let now = Utc
+            .with_ymd_and_hms(2025, 6, 1, 10, 0, 0)
+            .unwrap()
+            .with_nanosecond(900_000_000)
+            .unwrap();
+        assert_eq!(duration_until(&now, hms(10, 0, 0)), Ok(Duration::ZERO));
+        assert_eq!(
+            duration_until(&now, hms(10, 0, 1)),
+            Ok(Duration::from_millis(100))
+        );
+    }
+
+    // P4-4: alignment boundaries are local midnight plus multiples of the
+    // interval, in every zone and across daylight-saving changes.
+    #[test]
+    fn test_local_alignment_lands_on_wall_clock_boundaries() {
+        use chrono_tz::Asia::Kolkata;
+        let hour = Duration::from_secs(3600);
+        let day = Duration::from_secs(86_400);
+        // 08:04:31 IST, a half-hour zone: 1h lands at 09:00, not 09:30.
+        let now = Kolkata.with_ymd_and_hms(2026, 10, 16, 8, 4, 31).unwrap();
+        assert_eq!(
+            duration_to_next_local_alignment(&now, hour),
+            Ok(Duration::from_secs(55 * 60 + 29))
+        );
+        // 1d lands at local midnight, not UTC midnight.
+        assert_eq!(
+            duration_to_next_local_alignment(&now, day),
+            Ok(Duration::from_secs(15 * 3600 + 55 * 60 + 29))
+        );
+        // Exactly on a boundary waits a full interval.
+        let midnight = Kolkata.with_ymd_and_hms(2026, 10, 16, 0, 0, 0).unwrap();
+        assert_eq!(duration_to_next_local_alignment(&midnight, day), Ok(day));
+        assert_eq!(duration_to_next_local_alignment(&midnight, hour), Ok(hour));
+        // A sub-second position is respected.
+        let just_after = midnight.with_nanosecond(250_000_000).unwrap();
+        assert_eq!(
+            duration_to_next_local_alignment(&just_after, Duration::from_secs(1)),
+            Ok(Duration::from_millis(750))
+        );
+        // Zero interval is zero, as for the epoch version.
+        assert_eq!(
+            duration_to_next_local_alignment(&now, Duration::ZERO),
+            Ok(Duration::ZERO)
+        );
+    }
+
+    #[test]
+    fn test_local_alignment_across_daylight_saving_changes() {
+        let hour = Duration::from_secs(3600);
+        // Spring forward, New York 2025-03-09: 01:30 EST, the next wall-clock
+        // hour boundary 02:00 does not exist and resolves to 03:00 EDT, which
+        // is 30 real minutes away.
+        let now = New_York.with_ymd_and_hms(2025, 3, 9, 1, 30, 0).unwrap();
+        assert_eq!(
+            duration_to_next_local_alignment(&now, hour),
+            Ok(Duration::from_secs(30 * 60))
+        );
+        // Fall back, 2025-11-02: at 01:15 EDT the boundary 01:30 occurs twice;
+        // the first occurrence is 15 minutes away.
+        let now =
+            New_York.with_ymd_and_hms(2025, 11, 2, 0, 0, 0).unwrap() + ChronoDuration::minutes(75);
+        assert_eq!(
+            duration_to_next_local_alignment(&now, Duration::from_secs(30 * 60)),
+            Ok(Duration::from_secs(15 * 60))
+        );
+        // 1d lands at the next local midnight even when the clocks change in
+        // between: the real wait is an hour longer across a fall-back and an
+        // hour shorter across a spring-forward.
+        let day = Duration::from_secs(86_400);
+        let now = New_York.with_ymd_and_hms(2025, 11, 2, 0, 30, 0).unwrap();
+        assert_eq!(
+            duration_to_next_local_alignment(&now, day),
+            Ok(Duration::from_secs(24 * 3600 + 30 * 60))
+        );
+        let now = New_York.with_ymd_and_hms(2025, 3, 9, 0, 30, 0).unwrap();
+        assert_eq!(
+            duration_to_next_local_alignment(&now, day),
+            Ok(Duration::from_secs(22 * 3600 + 30 * 60))
+        );
+    }
+
+    #[test]
+    fn test_alignment_beyond_u64_nanoseconds_does_not_wrap() {
+        // 1000 years exceeds u64 nanoseconds (about 584 years).
+        let year = Duration::from_secs(365 * 86_400);
+        let since = Duration::from_secs(56 * 365 * 86_400);
+        let wait = duration_to_next_alignment(since, year * 1000);
+        assert_eq!(wait, year * 944);
+    }
+
+    #[test]
+    fn test_uniform_bounds_equal_as_seconds_are_rejected() {
+        let a = Duration::from_secs(1_000_000_000);
+        let b = a + Duration::from_nanos(1);
+        assert_ne!(a, b);
+        let err = Wait::new(Sampler::Uniform { min: a, max: b })
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("<MIN>"), "{err}");
+    }
+
+    #[test]
+    fn test_fmt_remaining_rounds_up() {
+        assert_eq!(fmt_remaining(Duration::from_millis(2_500), 0), "3s");
+        assert_eq!(fmt_remaining(Duration::from_millis(500), 0), "1s");
+        assert_eq!(fmt_remaining(Duration::from_millis(1), 0), "1s");
+        assert_eq!(fmt_remaining(Duration::from_secs(2), 0), "2s");
+        assert_eq!(fmt_remaining(Duration::from_millis(250), 1), "0.3s");
+        assert_eq!(fmt_remaining(Duration::from_millis(40), 1), "0.1s");
+        assert_eq!(fmt_remaining(Duration::from_millis(1_500), 1), "1.5s");
+    }
+
+    #[test]
+    fn test_console_whole_second_period_never_shows_zero() {
+        let (out, slept) = console(Sample::of(ms(2_500)), Verbose::Every(secs(1.0)));
+        assert_eq!(slept, ms(2_500));
+        let lines: Vec<&str> = out.lines().map(|l| &l[11..]).collect();
+        assert_eq!(
+            lines,
+            [
+                "[DOZR] Time remaining: 3s",
+                "[DOZR] Time remaining: 2s",
+                "[DOZR] Time remaining: 1s",
+                "Wait complete.",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_console_adaptive_short_wait_counts_down_once() {
+        let (out, slept) = console(Sample::of(ms(300)), Verbose::Adaptive);
+        assert_eq!(slept, ms(300));
+        let lines: Vec<&str> = out.lines().map(|l| &l[11..]).collect();
+        assert_eq!(lines, ["[DOZR] Time remaining: 1s", "Wait complete."]);
+    }
+
+    #[test]
     fn test_duration_until_past_rolls_to_tomorrow() {
         let now = Utc.with_ymd_and_hms(2025, 6, 1, 10, 0, 0).unwrap();
         assert_eq!(
@@ -1434,7 +1646,7 @@ mod tests {
                 "[DOZR] Time remaining: 1.0s",
                 "[DOZR] Time remaining: 0.8s",
                 "[DOZR] Time remaining: 0.5s",
-                "[DOZR] Time remaining: 0.2s",
+                "[DOZR] Time remaining: 0.3s",
                 "Wait complete.",
             ]
         );

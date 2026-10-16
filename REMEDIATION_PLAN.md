@@ -19,7 +19,9 @@ commands are included so each fix can be checked the same way.
 | P1-1 to P1-6 | Done | P1-5 and P1-6 share one mechanism: `WaitCondition::sample` returns a `Sample` with clamped and skipped details, and every wait goes through a replaceable `Sleeper`. That is the sleep injection from P2-1, done early because both items need it. |
 | P2-1 to P2-5 | Done | Notes under each item. P2-2 also fixed a panic on extreme parameters, found while planning it. |
 | P3-1 to P3-4 | Done | Notes under each item. |
-| Release | 0.5.0 | The planned 0.4.2 was not released separately; its fixes ship in 0.5.0. |
+| Release | 0.5.0 | The planned 0.4.2 was not released separately; its fixes ship in 0.5.0. Published to crates.io, tagged `v0.5.0`, release page created. 0.5.1 carries the P4 fixes. |
+| Post-release review | Done | An independent adversarial review of the shipped code, plus a before-and-after measurement, is recorded under **Post-release review** below. It found one behaviour bug and one misleading error introduced by this work. |
+| P4-1 to P4-9 | Done | All nine, including P4-8 and P4-9, which the definition of done allowed to slip to 0.5.2. Notes under each item. |
 
 ## Priorities
 
@@ -29,6 +31,7 @@ commands are included so each fix can be checked the same way.
 | **P1** | Behaviour is misleading, undocumented, or inconsistent. Some fixes change the CLI contract. | 0.5.0 (minor) |
 | **P2** | Architecture, test infrastructure, and project hygiene. No user-visible change on its own. | 0.5.0 |
 | **P3** | New capabilities that scripts need and that the refactor makes cheap. | 0.5.x |
+| **P4** | Defects found by the post-release review of 0.5.0. | 0.5.1 (patch) |
 
 Suggested order of work: P2-1 (RNG and clock injection) is a prerequisite
 for writing deterministic tests for several P0 items, so start there, then
@@ -512,3 +515,303 @@ are in place, and `cargo clippy -- -D warnings` passes.
 breaking change, and the documented-command CI check (P2-5) passes.
 
 **0.5.x** adds P3 items individually as they are ready.
+
+**0.5.1** ships when: P4-1 to P4-7 are merged with their tests, the
+end-to-end time-zone test runs in CI, and `scripts/check_examples.sh` fails
+on the planted file described under P4-5. P4-8 and P4-9 may follow in 0.5.2.
+
+## Post-release review
+
+Carried out after 0.5.0 was published. Two inputs: a side-by-side run of the
+original critique's reproductions against a rebuilt 0.4.1 and the released
+0.5.0, and an independent adversarial review of the shipped code that was
+given the code, not the plan, so it was not anchored on the author's reading.
+
+### Outcomes against the original critique
+
+Every defect in the original critique is fixed and the fix is measurable:
+
+| Check | 0.4.1 | 0.5.0 |
+| :--- | :--- | :--- |
+| `d 1s -v 10s` wall time | 10.0 s | 1.0 s |
+| `n 1s … -p 0.0` wall time | 1.0 s | 4 ms |
+| `d 100ms -j 3s -p 1.0`, longest of 5 | 105 ms | 2,987 ms |
+| `a 100ms -j 500ms`, longest of 5 | 100 ms | 538 ms |
+| `d 2s -v 250ms` update lines | 2 | 8 |
+| `-p 7` exit status | 0 | 2 |
+| `a 1ns` | accepted | rejected |
+| `e 1e-30` | panic | waits |
+| log-normal "1s" sampled mean | 3.08 s | 1.00 s |
+
+| Metric | 0.4.1 | 0.5.0 |
+| :--- | :--- | :--- |
+| Clippy warnings | 56 | 0 |
+| Tests | 60 | 114 |
+| Suite wall time | 36 s | 8 s |
+| Runtime dependencies | 38 | 38 |
+
+CI passed on `main` for both merges. The crate installs from crates.io with
+current dependency versions. The docs.rs build was not verified.
+
+### Code size, measured correctly
+
+A first measurement reported 43% growth in production code. It was wrong: it
+counted doc comments as code, compared unformatted 0.4.1 against formatted
+0.5.0, and counted the old `dist_sampler` binary but not the new example.
+With both versions formatted and comments and tests excluded:
+
+| Scope | 0.4.1 | 0.5.0 | Change |
+| :--- | :--- | :--- | :--- |
+| Everything shipped | 712 | 837 | +18% |
+| Library and binary, sampler excluded on both sides | 600 | 837 | +40% |
+| Comment lines | 77 | 231 | +200% |
+
+Where the 237 library lines came from, by function:
+
+| Category | Lines |
+| :--- | :--- |
+| Parameter validation | about +140 |
+| New options and their reporting (`--dry-run`, `--seed`, `--skip-exit-code`, `--min`, `--max`, clamp and bound notes) | about +130 |
+| Clock and sleeper injection | about +50 |
+| Daylight-saving handling for `at` | about +28 |
+| Core wait model (one `Wait` and `Sampler` replacing eight structs) | about -105 |
+| Progress schedule | about -26 |
+
+The refactor itself shrank the code; the growth is features and validation.
+About 45 of the validation lines are duplicated between CLI value parsers
+and `Wait::validate` (see P4-9).
+
+### Findings
+
+Ranked by severity. Each was reproduced on the released binary. "Introduced"
+means the defect did not exist in 0.4.1.
+
+1. **`at` picks the second occurrence during a repeated hour.** Introduced.
+   See P4-1.
+2. **Adaptive `-v` on waits under 500 ms prints "Wait complete." twice** and
+   no countdown. Pre-existing; two tests pass through this path and assert
+   too little. See P4-2.
+3. **The unit hint recommends `0.1s`, which the parser rejects.** Introduced.
+   See P4-3.
+4. **`align` boundaries are measured from the Unix epoch in UTC,** but the
+   README says "on the hour". Pre-existing. See P4-4.
+5. **`scripts/check_examples.sh` passes broken commands** in some forms.
+   Introduced. See P4-5.
+6. **A runtime error with a closed stderr pipe panics.** See P4-6.
+7. **Two chance-based tests** have about a 0.03% chance each of a false
+   failure per run. See P4-7.
+8. **Edge cases on absurd input:** uniform bounds that differ as `Duration`
+   but collide as `f64` fail at runtime with exit 1; `a 1000y` wraps; `-v 1s`
+   shows "0s" half a second before the end; `at` for the current second
+   waits a day. See P4-8.
+9. **Documentation nits:** the README says `sleep` takes "seconds only" (GNU
+   `sleep` accepts `0.05s` and `0.001m`); "one sleep call for the whole
+   duration" is only true without `-v`; builder methods and some struct
+   fields lack doc comments; the changelog links for 0.1.0 to 0.4.1 point at
+   tags that do not exist. See P4-4 and P4-8.
+
+### Process lessons
+
+- **A test double that differs from production gives false confidence.**
+  The DST unit tests used the `chrono-tz` zone type, which orders an
+  ambiguous local time by instant. The real `Local` type orders it by UTC
+  offset, the reverse for a fall-back. The tests passed while the binary was
+  wrong. The plan's own test requirement for P0-6 was written in terms of
+  the double; it should have demanded an end-to-end run of the binary under
+  a controlled `TZ`.
+- **Tests that assert only a completion line pass for the wrong reason.**
+  Assert the exact lines where output is the behaviour under test.
+- **Rebuild before measuring.** A stale release binary produced a false
+  regression during the review; `cargo build --examples` does not rebuild
+  the main binary.
+- **Measure like for like.** The 43% code-growth figure compared different
+  things; see above.
+
+## P4: defects found by the post-release review
+
+### P4-1. `at` waits for the second occurrence in a repeated hour
+
+Reproduce, with a POSIX time-zone rule whose fall-back happens two minutes
+from now (the three values are local DST times):
+
+```bash
+now=$(date -u +%s)
+fold=$(date -u -d "@$((now+3600+120))" +%H:%M:%S)
+target=$(date -u -d "@$((now+3600+60))" +%H:%M:%S)
+TZ="STD0DST,J259/02:00,J$(date -u +%j)/$fold" dozr at "$target" --dry-run
+# prints about 1h 1m; the first occurrence is 1m away
+```
+
+Cause: the `LocalResult::Ambiguous` branch of `duration_until` in
+`src/conditions.rs` assumes the pair is ordered `(earliest, latest)` by
+instant. `chrono::Local` on Unix orders it by UTC offset, so for a fall-back
+the first element is the later instant.
+
+Fix: sort the two candidates by instant before choosing the first that is
+not in the past.
+
+Tests:
+
+- Integration: run the binary under the rule above and assert the dry-run
+  output is under five minutes. This is the test the unit tests with
+  `chrono-tz` could not provide.
+- Unit: the existing fall-back tests, plus the same cases run through
+  `Local` with `TZ=America/New_York` set for the test process.
+
+(Done. The fix sorts the two candidates by instant in a shared
+`resolve_local` helper that `at` and the new local alignment both use. The
+`Local` unit test was not added: `TZ` is process-wide and unit tests run in
+parallel, so setting it would race with other tests. The end-to-end test
+under a crafted `TZ` rule covers the `Local` path instead, and it fails on
+the 0.5.0 code.)
+
+### P4-2. Adaptive `-v` on a short wait prints "Wait complete." twice
+
+Reproduce: `dozr d 300ms -v` prints the completion line twice and no
+countdown.
+
+Cause: `adaptive_verbose_wait_with` in `src/progress.rs` rounds the
+remaining time to whole seconds and passes zero to the display function
+while time remains; the display function treats zero as completion.
+
+Fix: never pass zero while time remains; show `1s` for anything under 1.5 s,
+or tenths as the fixed-period mode does.
+
+Tests:
+
+- Unit, on the fake clock: the exact display sequence for a 300 ms adaptive
+  wait is one countdown line and one completion line.
+- Tighten `test_time_align_verbose_output` and
+  `test_clamped_sample_is_reported_when_verbose` in `tests/cli.rs` to assert
+  exactly one "Wait complete." line.
+
+(Done. Both modes now round the displayed time up, so `300ms` shows `1s`
+and `2500ms -v 1s` shows `3s, 2s, 1s`; nothing shows `0s` before
+completion. This also closes the `-v 1s` bullet of P4-8.)
+
+### P4-3. The unit hint recommends a value the parser rejects
+
+Reproduce: `dozr d 0.1` says "a unit is required, for example 0.1s or
+0.1ms", and `dozr d 0.1s` is then rejected with "invalid character at 1",
+because `humantime` only accepts whole numbers per unit.
+
+Fix: for an integer, suggest `5s or 5ms`; for a decimal, convert to whole
+milliseconds and suggest that (`0.1` becomes `100ms`); for anything else,
+say that a whole number of units is required. Correct the changelog example.
+
+Tests:
+
+- Unit: the hint for `0.1`, `2`, `1e3`, and `inf`.
+- Integration: following the hint for `0.1` is accepted.
+
+(Done. `0.1` is steered to `100ms`, `0.0005` to `500us`; whole numbers get
+`2s or 2ms`; anything else gets a generic hint. A unit test checks every
+suggested form parses.)
+
+### P4-4. `align` boundaries are not local wall-clock boundaries
+
+Reproduce: `TZ=Asia/Kolkata dozr a 1h --dry-run` lands at half past the
+hour, and `dozr a 1d` lands at UTC midnight in every zone.
+
+Decide between two fixes: measure boundaries from local midnight, which
+makes `a 1h` land on the hour everywhere and `a 1d` land at local midnight;
+or keep the epoch and say so in the README, help text, and `examples.md`.
+Measuring from local midnight is recommended, since every example in the
+docs assumes it.
+
+Tests:
+
+- Unit: alignment to `1h` and `1d` at a fixed instant in a half-hour zone
+  (`Asia/Kolkata`) and across a DST change, with the clock injected.
+- Integration: `TZ=Asia/Kolkata dozr a 1h --dry-run` plus the current local
+  time lands on a whole hour.
+
+Also in this item: the README's "seconds only" claim about `sleep`, and the
+"one sleep call" sentence, which holds only without `-v`.
+
+(Done as local midnight, as agreed. `Sampler::Align` now uses
+`duration_to_next_local_alignment`, which resolves the boundary's wall time
+through the same gap and fold handling as `at`. Unit tests cover Kolkata,
+both New York changes, and a boundary that the clocks jump over. The README
+sentences are fixed. `duration_to_next_alignment` keeps its epoch semantics
+for library users.)
+
+### P4-5. `scripts/check_examples.sh` can pass a broken command
+
+Reproduce: a file containing `$ dozr d 5x`, a ```` ```sh ```` fence, an
+inline `` `dozr d 5x` `` in prose, and `dozr d 5x -p 0.2 --skip-exit-code 2`
+reports "0 failed", because those forms are not extracted and an allowed
+skip status of 1 or 2 masks real errors.
+
+Fix: extract every backticked `dozr …` from any line and every `dozr …` or
+`$ dozr …` line in `bash` and `sh` fences; accept the documented skip status
+only when the dry-run output is exactly `0s`.
+
+Tests:
+
+- Keep the planted file under `scripts/testdata/` and add a CI step that
+  asserts the script fails on it. The real docs must still pass.
+
+(Done. The real docs now yield 43 commands, up from 39, because inline
+mentions with two or more arguments are checked. The planted file fails
+with exactly 7, and CI checks that count.)
+
+### P4-6. A runtime error with a closed stderr panics
+
+Reproduce: `dozr u 1000000000s 1000000000s1ns --dry-run 2>&1 >/dev/null |
+head -c 0` exits 101, because `eprintln!` in `src/main.rs` panics on a
+broken pipe.
+
+Fix: write the error with `let _ = writeln!(std::io::stderr(), …)`.
+
+Tests: integration, the command above exits 1.
+
+(Done. The uniform command is now rejected at validation, so the test uses
+`a 400000000y`, whose boundary exceeds what `chrono` can represent and is
+the one remaining runtime error, with stderr redirected to `/dev/full`.
+Linux only.)
+
+### P4-7. Two chance-based tests
+
+`test_jitter_applies_with_probability` and `test_jitter_applies_to_align`
+in `tests/cli.rs` fail by chance about 0.03% of runs each.
+
+Fix: drive both with `--seed` and `--dry-run`, as the P3 tests already do,
+so they are deterministic and no longer sleep.
+
+(Done.)
+
+### P4-8. Absurd-input edges
+
+- Uniform bounds that differ by a nanosecond at a billion seconds pass
+  `Duration` validation but collide as `f64` and fail at runtime with exit 1.
+  Validate on the converted `f64` values.
+- `a 1000y` wraps in the `u128` to `u64` cast in `duration_to_next_alignment`.
+  Saturate, as `secs_to_duration` does.
+- `-v 1s` shows "0s" half a second before the end. Round up for display.
+- `at` for the current second waits a day because `now` has sub-second
+  precision. Compare at second granularity, or document.
+- Add doc comments to the builder methods, `Skip` fields, sleeper fields,
+  `RunOptions`, and `SystemClock::new`. Tag 0.1.0 to 0.4.1 at the commits
+  that set those versions, or drop their changelog links.
+
+Tests: one unit test per bullet where behaviour changes.
+
+(Done. The changelog links point at the commits that set each version
+rather than at tags, since tags cannot be pushed from the session that did
+this work.)
+
+### P4-9. Duplicated validation
+
+Five CLI value parsers in `src/cli.rs` (`parse_finite`, `parse_positive`,
+`parse_probability`, `parse_positive_duration`, `parse_align_interval`)
+check rules that `Wait::validate` checks again, about 45 lines. `run`
+already exits with status 2 and an error naming the argument when
+`validate` fails. Remove the five parsers and keep `parse_time` and
+`parse_verbose`, which exist for typing rather than validation.
+
+Tests: the existing `test_invalid_parameters_exit_2_and_name_the_argument`
+must still pass unchanged; it is the contract.
+
+(Done. It passed unchanged. The `--verbose` minimum moved out of the parser
+as well, so `parse_verbose` only types the value.)
